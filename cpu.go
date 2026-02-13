@@ -13,8 +13,8 @@ import "log"
 // Bus provides word-aligned memory access for the CPU.
 // All addresses are 24-bit (masked by the CPU before calling).
 type Bus interface {
-	Read(op Size, addr uint32) uint32
-	Write(op Size, addr uint32, val uint32)
+	Read(cycle uint64, op Size, addr uint32) uint32
+	Write(cycle uint64, op Size, addr uint32, val uint32)
 	Reset()
 }
 
@@ -70,11 +70,11 @@ func (c *CPU) Reset() {
 	c.pendingIPL = 0
 	c.pendingVec = nil
 
-	ssp := c.bus.Read(Long, 0)
+	ssp := c.bus.Read(c.cycles, Long, 0)
 	c.reg.A[7] = ssp
 	c.reg.SSP = ssp
 
-	c.reg.PC = c.bus.Read(Long, 4)
+	c.reg.PC = c.bus.Read(c.cycles, Long, 4)
 }
 
 // Halted returns true if the CPU is halted due to a double bus fault.
@@ -200,7 +200,7 @@ func (c *CPU) readBus(sz Size, addr uint32) uint32 {
 		c.halted = true
 		return 0
 	}
-	return c.bus.Read(sz, addr&0xFFFFFF)
+	return c.bus.Read(c.cycles, sz, addr&0xFFFFFF)
 }
 
 // writeBus writes to the bus with 24-bit address masking.
@@ -215,7 +215,7 @@ func (c *CPU) writeBus(sz Size, addr uint32, val uint32) {
 		c.halted = true
 		return
 	}
-	c.bus.Write(sz, addr&0xFFFFFF, val&sz.Mask())
+	c.bus.Write(c.cycles, sz, addr&0xFFFFFF, val&sz.Mask())
 }
 
 // fetchPC reads a 16-bit word at the current PC and advances PC by 2.
