@@ -46,6 +46,9 @@ type CPU struct {
 	// Interrupt state
 	pendingIPL uint8  // Pending interrupt priority level (1-7, 0=none)
 	pendingVec *uint8 // Pending interrupt vector (nil = auto-vector)
+
+	// Cycle deficit from StepCycles when an instruction's cost exceeded the budget.
+	deficit int
 }
 
 // New creates a CPU wired to the given bus and performs a hardware reset.
@@ -63,6 +66,7 @@ func (c *CPU) Reset() {
 	c.stopped = false
 	c.halted = false
 	c.cycles = 0
+	c.deficit = 0
 	c.pendingIPL = 0
 	c.pendingVec = nil
 
@@ -124,6 +128,44 @@ func (c *CPU) Step() int {
 	}
 
 	return int(c.cycles - before)
+}
+
+// StepCycles executes a single instruction within the given cycle budget.
+// If a previous instruction's cost exceeded its budget, the deficit is paid
+// down first without executing a new instruction. When a new instruction
+// executes and its cost exceeds the budget, the excess is stored as a
+// deficit to be charged on subsequent calls. Returns the number of cycles
+// consumed from this call's budget.
+func (c *CPU) StepCycles(budget int) int {
+	if c.halted {
+		return 0
+	}
+
+	// Pay down deficit from a previous instruction that exceeded its budget.
+	if c.deficit > 0 {
+		if budget >= c.deficit {
+			n := c.deficit
+			c.deficit = 0
+			return n
+		}
+		c.deficit -= budget
+		return budget
+	}
+
+	cost := c.Step()
+
+	if cost <= budget {
+		return cost
+	}
+
+	c.deficit = cost - budget
+	return budget
+}
+
+// Deficit returns the remaining cycle deficit from a previous StepCycles
+// call where the instruction cost exceeded the budget.
+func (c *CPU) Deficit() int {
+	return c.deficit
 }
 
 // Cycles returns the total cycle count since the last reset.
@@ -259,6 +301,7 @@ func (c *CPU) SetState(d [8]uint32, a [8]uint32, pc uint32, sr uint16, usp, ssp 
 	c.stopped = false
 	c.halted = false
 	c.cycles = 0
+	c.deficit = 0
 	c.pendingIPL = 0
 	c.pendingVec = nil
 

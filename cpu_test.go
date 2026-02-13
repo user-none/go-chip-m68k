@@ -321,3 +321,201 @@ func TestAddressError(t *testing.T) {
 		}
 	})
 }
+
+// fillNOPs writes NOP instructions (0x4E71, 4 cycles each) starting at addr.
+func fillNOPs(bus *testBus, addr uint32, count int) {
+	for i := 0; i < count; i++ {
+		writeWord(bus, addr+uint32(i*2), 0x4E71)
+	}
+}
+
+// newNOPCPU creates a CPU with NOPs at the given PC and returns it ready to run.
+func newNOPCPU(nopCount int) (*CPU, *testBus) {
+	bus := &testBus{}
+	pc := uint32(0x1000)
+	fillNOPs(bus, pc, nopCount)
+	cpu := &CPU{bus: bus}
+	cpu.SetState([8]uint32{}, [8]uint32{}, pc, 0x2700, 0, 0x10000)
+	return cpu, bus
+}
+
+func TestStepCycles(t *testing.T) {
+	t.Run("budget larger than cost", func(t *testing.T) {
+		cpu, _ := newNOPCPU(1)
+
+		cycles := cpu.StepCycles(100)
+		if cycles != 4 {
+			t.Errorf("StepCycles(100) = %d, want 4", cycles)
+		}
+		if cpu.Deficit() != 0 {
+			t.Errorf("Deficit() = %d, want 0", cpu.Deficit())
+		}
+	})
+
+	t.Run("budget equal to cost", func(t *testing.T) {
+		cpu, _ := newNOPCPU(1)
+
+		cycles := cpu.StepCycles(4)
+		if cycles != 4 {
+			t.Errorf("StepCycles(4) = %d, want 4", cycles)
+		}
+		if cpu.Deficit() != 0 {
+			t.Errorf("Deficit() = %d, want 0", cpu.Deficit())
+		}
+	})
+
+	t.Run("budget smaller than cost creates deficit", func(t *testing.T) {
+		cpu, _ := newNOPCPU(1)
+
+		cycles := cpu.StepCycles(1)
+		if cycles != 1 {
+			t.Errorf("StepCycles(1) = %d, want 1", cycles)
+		}
+		if cpu.Deficit() != 3 {
+			t.Errorf("Deficit() = %d, want 3", cpu.Deficit())
+		}
+	})
+
+	t.Run("deficit paid off in one call", func(t *testing.T) {
+		cpu, _ := newNOPCPU(2)
+
+		// First call: NOP costs 4, budget is 1 → deficit = 3
+		cpu.StepCycles(1)
+
+		// Second call: pay off deficit of 3 with budget of 100
+		cycles := cpu.StepCycles(100)
+		if cycles != 3 {
+			t.Errorf("StepCycles(100) = %d, want 3", cycles)
+		}
+		if cpu.Deficit() != 0 {
+			t.Errorf("Deficit() = %d, want 0", cpu.Deficit())
+		}
+	})
+
+	t.Run("deficit paid off across multiple calls", func(t *testing.T) {
+		cpu, _ := newNOPCPU(2)
+
+		// NOP costs 4, budget is 1 → deficit = 3
+		cpu.StepCycles(1)
+
+		// Pay 1 of 3 → deficit = 2
+		cycles := cpu.StepCycles(1)
+		if cycles != 1 {
+			t.Errorf("StepCycles(1) = %d, want 1", cycles)
+		}
+		if cpu.Deficit() != 2 {
+			t.Errorf("Deficit() = %d, want 2", cpu.Deficit())
+		}
+
+		// Pay 1 of 2 → deficit = 1
+		cycles = cpu.StepCycles(1)
+		if cycles != 1 {
+			t.Errorf("StepCycles(1) = %d, want 1", cycles)
+		}
+		if cpu.Deficit() != 1 {
+			t.Errorf("Deficit() = %d, want 1", cpu.Deficit())
+		}
+
+		// Pay 1 of 1 → deficit = 0
+		cycles = cpu.StepCycles(1)
+		if cycles != 1 {
+			t.Errorf("StepCycles(1) = %d, want 1", cycles)
+		}
+		if cpu.Deficit() != 0 {
+			t.Errorf("Deficit() = %d, want 0", cpu.Deficit())
+		}
+	})
+
+	t.Run("multiple instructions within budget", func(t *testing.T) {
+		cpu, _ := newNOPCPU(10)
+
+		// Run 3 NOPs using StepCycles in a budget loop
+		budget := 12
+		count := 0
+		for budget > 0 {
+			cycles := cpu.StepCycles(budget)
+			budget -= cycles
+			count++
+		}
+		if count != 3 {
+			t.Errorf("executed %d steps, want 3", count)
+		}
+		if budget != 0 {
+			t.Errorf("remaining budget = %d, want 0", budget)
+		}
+	})
+
+	t.Run("scanline boundary simulation", func(t *testing.T) {
+		cpu, _ := newNOPCPU(20)
+
+		// Scanline 1: budget of 10 cycles. NOPs cost 4 each.
+		// Should fit 2 NOPs (8 cycles), third NOP overflows (4 > 2 remaining).
+		budget := 10
+		total := 0
+		for budget > 0 {
+			cycles := cpu.StepCycles(budget)
+			budget -= cycles
+			total += cycles
+		}
+		if total != 10 {
+			t.Errorf("scanline 1 total = %d, want 10", total)
+		}
+		deficit := cpu.Deficit()
+		if deficit != 2 {
+			t.Errorf("deficit after scanline 1 = %d, want 2", deficit)
+		}
+
+		// Scanline 2: budget of 10. First call pays off deficit of 2.
+		budget = 10
+		total = 0
+		first := cpu.StepCycles(budget)
+		budget -= first
+		total += first
+		if first != 2 {
+			t.Errorf("first call of scanline 2 = %d, want 2 (deficit payoff)", first)
+		}
+
+		// Continue running the rest of the budget
+		for budget > 0 {
+			cycles := cpu.StepCycles(budget)
+			budget -= cycles
+			total += cycles
+		}
+		if total != 10 {
+			t.Errorf("scanline 2 total = %d, want 10", total)
+		}
+	})
+
+	t.Run("halted CPU returns zero", func(t *testing.T) {
+		cpu, _ := newNOPCPU(1)
+
+		// Set PC to odd address to trigger halt
+		cpu.SetState([8]uint32{}, [8]uint32{}, 0x1001, 0x2700, 0, 0x10000)
+		cpu.Step()
+
+		cycles := cpu.StepCycles(100)
+		if cycles != 0 {
+			t.Errorf("StepCycles(100) on halted CPU = %d, want 0", cycles)
+		}
+	})
+
+	t.Run("reset clears deficit", func(t *testing.T) {
+		cpu, bus := newNOPCPU(1)
+
+		// Create a deficit
+		cpu.StepCycles(1)
+		if cpu.Deficit() == 0 {
+			t.Fatal("expected non-zero deficit before reset")
+		}
+
+		// Set up reset vectors so Reset() works
+		bus.Write(Long, 0, 0x10000) // SSP
+		bus.Write(Long, 4, 0x1000)  // PC
+		fillNOPs(bus, 0x1000, 10)
+
+		cpu.Reset()
+		if cpu.Deficit() != 0 {
+			t.Errorf("Deficit() after Reset = %d, want 0", cpu.Deficit())
+		}
+	})
+}
