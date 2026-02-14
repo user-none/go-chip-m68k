@@ -1122,8 +1122,8 @@ func TestStepCycles(t *testing.T) {
 		}
 
 		// Set up reset vectors so Reset() works
-		bus.Write(0, Long, 0, 0x10000) // SSP
-		bus.Write(0, Long, 4, 0x1000)  // PC
+		bus.Write(Long, 0, 0x10000) // SSP
+		bus.Write(Long, 4, 0x1000)  // PC
 		fillNOPs(bus, 0x1000, 10)
 
 		cpu.Reset()
@@ -1137,8 +1137,8 @@ func TestBusCycleStamp(t *testing.T) {
 	t.Run("reset passes cycle 0", func(t *testing.T) {
 		bus := &spyBus{}
 		// Set up reset vectors: SSP at addr 0, PC at addr 4
-		bus.testBus.Write(0, Long, 0, 0x10000)
-		bus.testBus.Write(0, Long, 4, 0x1000)
+		bus.testBus.Write(Long, 0, 0x10000)
+		bus.testBus.Write(Long, 4, 0x1000)
 
 		cpu := &CPU{bus: bus}
 		cpu.Reset()

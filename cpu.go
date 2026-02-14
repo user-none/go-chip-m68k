@@ -13,9 +13,17 @@ import "log"
 // Bus provides word-aligned memory access for the CPU.
 // All addresses are 24-bit (masked by the CPU before calling).
 type Bus interface {
-	Read(cycle uint64, op Size, addr uint32) uint32
-	Write(cycle uint64, op Size, addr uint32, val uint32)
+	Read(op Size, addr uint32) uint32
+	Write(op Size, addr uint32, val uint32)
 	Reset()
+}
+
+// CycleBus is optionally implemented by a Bus that needs
+// per-access cycle timestamps (e.g., for device timing, DMA).
+type CycleBus interface {
+	Bus
+	ReadCycle(cycle uint64, op Size, addr uint32) uint32
+	WriteCycle(cycle uint64, op Size, addr uint32, val uint32)
 }
 
 // Registers holds the programmer-visible state of the MC68000.
@@ -31,9 +39,10 @@ type Registers struct {
 
 // CPU is the MC68000 processor.
 type CPU struct {
-	reg    Registers
-	bus    Bus
-	cycles uint64
+	reg      Registers
+	bus      Bus
+	cycleBus CycleBus // non-nil when bus implements CycleBus
+	cycles   uint64
 
 	// The instruction register holds the first word of the currently
 	// executing instruction, latched at fetch time.
@@ -55,6 +64,7 @@ type CPU struct {
 // The reset reads the initial SSP from address 0 and PC from address 4.
 func New(bus Bus) *CPU {
 	c := &CPU{bus: bus}
+	c.cycleBus, _ = bus.(CycleBus)
 	c.Reset()
 	return c
 }
@@ -62,6 +72,7 @@ func New(bus Bus) *CPU {
 // Reset performs a hardware reset: loads SSP from address 0x000000 and
 // PC from address 0x000004, enters supervisor mode with interrupts masked.
 func (c *CPU) Reset() {
+	c.cycleBus, _ = c.bus.(CycleBus)
 	c.reg = Registers{SR: 0x2700}
 	c.stopped = false
 	c.halted = false
@@ -70,11 +81,17 @@ func (c *CPU) Reset() {
 	c.pendingIPL = 0
 	c.pendingVec = nil
 
-	ssp := c.bus.Read(c.cycles, Long, 0)
-	c.reg.A[7] = ssp
-	c.reg.SSP = ssp
-
-	c.reg.PC = c.bus.Read(c.cycles, Long, 4)
+	if c.cycleBus != nil {
+		ssp := c.cycleBus.ReadCycle(c.cycles, Long, 0)
+		c.reg.A[7] = ssp
+		c.reg.SSP = ssp
+		c.reg.PC = c.cycleBus.ReadCycle(c.cycles, Long, 4)
+	} else {
+		ssp := c.bus.Read(Long, 0)
+		c.reg.A[7] = ssp
+		c.reg.SSP = ssp
+		c.reg.PC = c.bus.Read(Long, 4)
+	}
 }
 
 // Halted returns true if the CPU is halted due to a double bus fault.
@@ -200,7 +217,11 @@ func (c *CPU) readBus(sz Size, addr uint32) uint32 {
 		c.halted = true
 		return 0
 	}
-	return c.bus.Read(c.cycles, sz, addr&0xFFFFFF)
+	addr &= 0xFFFFFF
+	if c.cycleBus != nil {
+		return c.cycleBus.ReadCycle(c.cycles, sz, addr)
+	}
+	return c.bus.Read(sz, addr)
 }
 
 // writeBus writes to the bus with 24-bit address masking.
@@ -215,7 +236,13 @@ func (c *CPU) writeBus(sz Size, addr uint32, val uint32) {
 		c.halted = true
 		return
 	}
-	c.bus.Write(c.cycles, sz, addr&0xFFFFFF, val&sz.Mask())
+	addr &= 0xFFFFFF
+	val &= sz.Mask()
+	if c.cycleBus != nil {
+		c.cycleBus.WriteCycle(c.cycles, sz, addr, val)
+		return
+	}
+	c.bus.Write(sz, addr, val)
 }
 
 // fetchPC reads a 16-bit word at the current PC and advances PC by 2.
@@ -293,6 +320,7 @@ func (c *CPU) setCCR(ccr uint8) {
 // performing a hardware reset. This is intended for testing, where
 // exact CPU state must be established before executing an instruction.
 func (c *CPU) SetState(d [8]uint32, a [8]uint32, pc uint32, sr uint16, usp, ssp uint32) {
+	c.cycleBus, _ = c.bus.(CycleBus)
 	c.reg.D = d
 	c.reg.SR = sr
 	c.reg.USP = usp

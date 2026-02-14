@@ -8,7 +8,7 @@ type testBus struct {
 	mem [16 * 1024 * 1024]byte
 }
 
-func (b *testBus) Read(_ uint64, sz Size, addr uint32) uint32 {
+func (b *testBus) Read(sz Size, addr uint32) uint32 {
 	addr &= 0xFFFFFF
 	switch sz {
 	case Byte:
@@ -22,7 +22,7 @@ func (b *testBus) Read(_ uint64, sz Size, addr uint32) uint32 {
 	return 0
 }
 
-func (b *testBus) Write(_ uint64, sz Size, addr uint32, val uint32) {
+func (b *testBus) Write(sz Size, addr uint32, val uint32) {
 	addr &= 0xFFFFFF
 	switch sz {
 	case Byte:
@@ -40,20 +40,21 @@ func (b *testBus) Write(_ uint64, sz Size, addr uint32, val uint32) {
 
 func (b *testBus) Reset() {}
 
-// spyBus wraps testBus and records the cycle value from each Read/Write call.
+// spyBus wraps testBus and records the cycle value from each ReadCycle/WriteCycle call.
+// It implements CycleBus; the embedded testBus satisfies the Bus part automatically.
 type spyBus struct {
 	testBus
 	cycles []uint64
 }
 
-func (b *spyBus) Read(cycle uint64, sz Size, addr uint32) uint32 {
+func (b *spyBus) ReadCycle(cycle uint64, sz Size, addr uint32) uint32 {
 	b.cycles = append(b.cycles, cycle)
-	return b.testBus.Read(cycle, sz, addr)
+	return b.testBus.Read(sz, addr)
 }
 
-func (b *spyBus) Write(cycle uint64, sz Size, addr uint32, val uint32) {
+func (b *spyBus) WriteCycle(cycle uint64, sz Size, addr uint32, val uint32) {
 	b.cycles = append(b.cycles, cycle)
-	b.testBus.Write(cycle, sz, addr, val)
+	b.testBus.Write(sz, addr, val)
 }
 
 // cpuState captures the full programmer-visible state for a test case.
