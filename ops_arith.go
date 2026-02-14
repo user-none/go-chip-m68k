@@ -91,9 +91,13 @@ func opADDtoReg(c *CPU) {
 	mask := sz.Mask()
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
-	c.cycles += 4
-	if sz == Long {
-		c.cycles += 4
+	fetch := eaFetchCycles(mode, reg, sz)
+	if sz != Long {
+		c.cycles += 4 + fetch
+	} else if mode >= 2 && !(mode == 7 && reg == 4) {
+		c.cycles += 6 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -110,9 +114,11 @@ func opADDtoEA(c *CPU) {
 	c.setFlagsAdd(s, d, result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
+	fetch := eaFetchCycles(mode, reg, sz)
 	if sz == Long {
-		c.cycles += 4
+		c.cycles += 12 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -151,7 +157,12 @@ func opADDA(c *CPU) {
 	c.reg.A[an] += val
 
 	// ADDA does not affect condition codes
-	c.cycles += 8
+	fetch := eaFetchCycles(mode, reg, sz)
+	if sz == Long && mode >= 2 && !(mode == 7 && reg == 4) {
+		c.cycles += 6 + fetch
+	} else {
+		c.cycles += 8 + fetch
+	}
 }
 
 // --- ADDI ---
@@ -191,9 +202,19 @@ func opADDI(c *CPU) {
 	c.setFlagsAdd(imm, d, result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
-	if sz == Long {
-		c.cycles += 8
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 16
+		} else {
+			c.cycles += 8
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 20 + fetch
+		} else {
+			c.cycles += 12 + fetch
+		}
 	}
 }
 
@@ -241,9 +262,19 @@ func opADDQ(c *CPU) {
 	c.setFlagsAdd(data, d, result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 4
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 8
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -313,7 +344,11 @@ func opADDXmem(c *CPU) {
 	}
 
 	dst.write(c, sz, result)
-	c.cycles += 18
+	if sz == Long {
+		c.cycles += 30
+	} else {
+		c.cycles += 18
+	}
 }
 
 // --- SUB ---
@@ -363,9 +398,13 @@ func opSUBtoReg(c *CPU) {
 	mask := sz.Mask()
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
-	c.cycles += 4
-	if sz == Long {
-		c.cycles += 4
+	fetch := eaFetchCycles(mode, reg, sz)
+	if sz != Long {
+		c.cycles += 4 + fetch
+	} else if mode >= 2 && !(mode == 7 && reg == 4) {
+		c.cycles += 6 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -382,9 +421,11 @@ func opSUBtoEA(c *CPU) {
 	c.setFlagsSub(s, d, result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
+	fetch := eaFetchCycles(mode, reg, sz)
 	if sz == Long {
-		c.cycles += 4
+		c.cycles += 12 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -422,7 +463,12 @@ func opSUBA(c *CPU) {
 	}
 	c.reg.A[an] -= val
 
-	c.cycles += 8
+	fetch := eaFetchCycles(mode, reg, sz)
+	if sz == Long && mode >= 2 && !(mode == 7 && reg == 4) {
+		c.cycles += 6 + fetch
+	} else {
+		c.cycles += 8 + fetch
+	}
 }
 
 // --- SUBI ---
@@ -462,9 +508,19 @@ func opSUBI(c *CPU) {
 	c.setFlagsSub(imm, d, result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
-	if sz == Long {
-		c.cycles += 8
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 16
+		} else {
+			c.cycles += 8
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 20 + fetch
+		} else {
+			c.cycles += 12 + fetch
+		}
 	}
 }
 
@@ -510,9 +566,19 @@ func opSUBQ(c *CPU) {
 	c.setFlagsSub(data, d, result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 4
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 8
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -580,7 +646,11 @@ func opSUBXmem(c *CPU) {
 	}
 
 	dst.write(c, sz, result)
-	c.cycles += 18
+	if sz == Long {
+		c.cycles += 30
+	} else {
+		c.cycles += 18
+	}
 }
 
 // --- CMP ---
@@ -616,9 +686,11 @@ func opCMP(c *CPU) {
 	result := d - s
 	c.setFlagsCmp(s, d, result, sz)
 
-	c.cycles += 4
+	fetch := eaFetchCycles(mode, reg, sz)
 	if sz == Long {
-		c.cycles += 2
+		c.cycles += 6 + fetch
+	} else {
+		c.cycles += 4 + fetch
 	}
 }
 
@@ -658,7 +730,7 @@ func opCMPA(c *CPU) {
 	result := d - val
 	c.setFlagsCmp(val, d, result, Long)
 
-	c.cycles += 6
+	c.cycles += 6 + eaFetchCycles(mode, reg, sz)
 }
 
 // --- CMPI ---
@@ -697,9 +769,19 @@ func opCMPI(c *CPU) {
 	result := d - imm
 	c.setFlagsCmp(imm, d, result, sz)
 
-	c.cycles += 8
-	if sz == Long {
-		c.cycles += 4
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 14
+		} else {
+			c.cycles += 8
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -728,7 +810,11 @@ func opCMPM(c *CPU) {
 	result := d - s
 	c.setFlagsCmp(s, d, result, sz)
 
-	c.cycles += 12
+	if sz == Long {
+		c.cycles += 20
+	} else {
+		c.cycles += 12
+	}
 }
 
 // --- MULU ---
@@ -762,7 +848,7 @@ func opMULU(c *CPU) {
 	c.reg.D[dn] = result
 
 	c.setFlagsLogical(result, Long)
-	c.cycles += 70 // varies, 38-70
+	c.cycles += 70 + eaFetchCycles(mode, reg, Word) // base varies 38-70, using worst-case
 }
 
 // --- MULS ---
@@ -796,7 +882,7 @@ func opMULS(c *CPU) {
 	c.reg.D[dn] = result
 
 	c.setFlagsLogical(result, Long)
-	c.cycles += 70
+	c.cycles += 70 + eaFetchCycles(mode, reg, Word) // base varies 38-70, using worst-case
 }
 
 // --- DIVU ---
@@ -844,7 +930,7 @@ func opDIVU(c *CPU) {
 		c.setFlagsLogical(quotient, Word)
 	}
 
-	c.cycles += 140 // varies, 76-140
+	c.cycles += 140 + eaFetchCycles(mode, reg, Word) // base varies 76-140, using worst-case
 }
 
 // --- DIVS ---
@@ -891,7 +977,7 @@ func opDIVS(c *CPU) {
 		c.setFlagsLogical(uint32(quotient), Word)
 	}
 
-	c.cycles += 158 // varies, 120-158
+	c.cycles += 158 + eaFetchCycles(mode, reg, Word) // base varies 120-158, using worst-case
 }
 
 // --- NEG ---
@@ -924,12 +1010,19 @@ func opNEG(c *CPU) {
 	c.setFlagsSub(d, 0, result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 4
-	}
-	if sz == Long && mode == 0 {
-		c.cycles += 2
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 6
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -972,12 +1065,19 @@ func opNEGX(c *CPU) {
 	}
 	dst.write(c, sz, result)
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 4
-	}
-	if sz == Long && mode == 0 {
-		c.cycles += 2
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 6
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -1012,12 +1112,19 @@ func opCLR(c *CPU) {
 	c.reg.SR &^= flagN | flagV | flagC
 	c.reg.SR |= flagZ
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 4
-	}
-	if sz == Long && mode == 0 {
-		c.cycles += 2
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 6
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -1090,5 +1197,5 @@ func opCHK(c *CPU) {
 		return
 	}
 
-	c.cycles += 10
+	c.cycles += 10 + eaFetchCycles(mode, reg, Word)
 }

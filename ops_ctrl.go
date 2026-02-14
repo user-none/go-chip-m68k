@@ -187,9 +187,10 @@ func opMOVEfromSR(c *CPU) {
 	dst := c.resolveEA(mode, reg, Word)
 	dst.write(c, Word, uint32(c.reg.SR))
 
-	c.cycles += 6
-	if mode >= 2 {
-		c.cycles += 2
+	if mode == 0 {
+		c.cycles += 6
+	} else {
+		c.cycles += 8 + eaFetchCycles(mode, reg, Word)
 	}
 }
 
@@ -201,7 +202,7 @@ func opMOVEtoCCR(c *CPU) {
 	val := src.read(c, Word)
 	c.setCCR(uint8(val))
 
-	c.cycles += 12
+	c.cycles += 12 + eaFetchCycles(mode, reg, Word)
 }
 
 func opMOVEtoSR(c *CPU) {
@@ -217,7 +218,7 @@ func opMOVEtoSR(c *CPU) {
 	val := src.read(c, Word)
 	c.setSR(uint16(val))
 
-	c.cycles += 12
+	c.cycles += 12 + eaFetchCycles(mode, reg, Word)
 }
 
 func opMOVEtoUSP(c *CPU) {

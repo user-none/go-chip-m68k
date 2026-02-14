@@ -154,7 +154,24 @@ func opJMP(c *CPU) {
 	dst := c.resolveEA(mode, reg, Word)
 	c.reg.PC = dst.address()
 
-	c.cycles += 8
+	// PRM timing: (An)=8, d16(An)=10, d8(An,Xn)=14, abs.W=10, abs.L=12, d16(PC)=10, d8(PC,Xn)=14
+	switch mode {
+	case 2:
+		c.cycles += 8
+	case 5:
+		c.cycles += 10
+	case 6:
+		c.cycles += 14
+	case 7:
+		switch reg {
+		case 0, 2: // abs.W, d16(PC)
+			c.cycles += 10
+		case 1: // abs.L
+			c.cycles += 12
+		case 3: // d8(PC,Xn)
+			c.cycles += 14
+		}
+	}
 }
 
 // --- JSR ---
@@ -182,7 +199,24 @@ func opJSR(c *CPU) {
 	c.pushLong(c.reg.PC)
 	c.reg.PC = dst.address()
 
-	c.cycles += 16
+	// PRM timing: (An)=16, d16(An)=18, d8(An,Xn)=22, abs.W=18, abs.L=20, d16(PC)=18, d8(PC,Xn)=22
+	switch mode {
+	case 2:
+		c.cycles += 16
+	case 5:
+		c.cycles += 18
+	case 6:
+		c.cycles += 22
+	case 7:
+		switch reg {
+		case 0, 2: // abs.W, d16(PC)
+			c.cycles += 18
+		case 1: // abs.L
+			c.cycles += 20
+		case 3: // d8(PC,Xn)
+			c.cycles += 22
+		}
+	}
 }
 
 // --- RTS ---
@@ -259,12 +293,17 @@ func opScc(c *CPU) {
 
 	if c.testCondition(cc) {
 		dst.write(c, Byte, 0xFF)
-		c.cycles += 6
 	} else {
 		dst.write(c, Byte, 0x00)
-		c.cycles += 4
 	}
-	if mode >= 2 {
-		c.cycles += 4
+
+	if mode == 0 {
+		if c.testCondition(cc) {
+			c.cycles += 6
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
 	}
 }

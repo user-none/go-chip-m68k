@@ -58,9 +58,13 @@ func opANDtoReg(c *CPU) {
 	mask := sz.Mask()
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
-	c.cycles += 4
-	if sz == Long {
-		c.cycles += 4
+	fetch := eaFetchCycles(mode, reg, sz)
+	if sz != Long {
+		c.cycles += 4 + fetch
+	} else if mode >= 2 && !(mode == 7 && reg == 4) {
+		c.cycles += 6 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -75,9 +79,11 @@ func opANDtoEA(c *CPU) {
 	c.setFlagsLogical(result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
+	fetch := eaFetchCycles(mode, reg, sz)
 	if sz == Long {
-		c.cycles += 4
+		c.cycles += 12 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -117,9 +123,19 @@ func opANDI(c *CPU) {
 	c.setFlagsLogical(result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
-	if sz == Long {
-		c.cycles += 8
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 16
+		} else {
+			c.cycles += 8
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 20 + fetch
+		} else {
+			c.cycles += 12 + fetch
+		}
 	}
 }
 
@@ -166,9 +182,13 @@ func opORtoReg(c *CPU) {
 	mask := sz.Mask()
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
-	c.cycles += 4
-	if sz == Long {
-		c.cycles += 4
+	fetch := eaFetchCycles(mode, reg, sz)
+	if sz != Long {
+		c.cycles += 4 + fetch
+	} else if mode >= 2 && !(mode == 7 && reg == 4) {
+		c.cycles += 6 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -183,9 +203,11 @@ func opORtoEA(c *CPU) {
 	c.setFlagsLogical(result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
+	fetch := eaFetchCycles(mode, reg, sz)
 	if sz == Long {
-		c.cycles += 4
+		c.cycles += 12 + fetch
+	} else {
+		c.cycles += 8 + fetch
 	}
 }
 
@@ -225,9 +247,19 @@ func opORI(c *CPU) {
 	c.setFlagsLogical(result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
-	if sz == Long {
-		c.cycles += 8
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 16
+		} else {
+			c.cycles += 8
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 20 + fetch
+		} else {
+			c.cycles += 12 + fetch
+		}
 	}
 }
 
@@ -263,12 +295,19 @@ func opEOR(c *CPU) {
 	c.setFlagsLogical(result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 4
-	}
-	if sz == Long && mode == 0 {
-		c.cycles += 4
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 8
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -308,9 +347,19 @@ func opEORI(c *CPU) {
 	c.setFlagsLogical(result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 8
-	if sz == Long {
-		c.cycles += 8
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 16
+		} else {
+			c.cycles += 8
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 20 + fetch
+		} else {
+			c.cycles += 12 + fetch
+		}
 	}
 }
 
@@ -343,12 +392,19 @@ func opNOT(c *CPU) {
 	c.setFlagsLogical(result, sz)
 	dst.write(c, sz, result)
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 4
-	}
-	if sz == Long && mode == 0 {
-		c.cycles += 2
+	if mode == 0 {
+		if sz == Long {
+			c.cycles += 6
+		} else {
+			c.cycles += 4
+		}
+	} else {
+		fetch := eaFetchCycles(mode, reg, sz)
+		if sz == Long {
+			c.cycles += 12 + fetch
+		} else {
+			c.cycles += 8 + fetch
+		}
 	}
 }
 
@@ -380,7 +436,7 @@ func opTST(c *CPU) {
 	val := src.read(c, sz)
 	c.setFlagsLogical(val, sz)
 
-	c.cycles += 4
+	c.cycles += 4 + eaFetchCycles(mode, reg, sz)
 }
 
 // --- TAS ---
@@ -415,9 +471,10 @@ func opTAS(c *CPU) {
 	// Set bit 7
 	dst.write(c, Byte, val|0x80)
 
-	c.cycles += 4
-	if mode >= 2 {
-		c.cycles += 10
+	if mode == 0 {
+		c.cycles += 4
+	} else {
+		c.cycles += 10 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -504,7 +561,7 @@ func opShiftMem(c *CPU) {
 	result := doShift(c, val, 1, dir, typ, Word)
 	dst.write(c, Word, result)
 
-	c.cycles += 8
+	c.cycles += 8 + eaFetchCycles(mode, reg, Word)
 }
 
 // doShift performs the actual shift/rotate operation.

@@ -71,7 +71,12 @@ func opBTSTdyn(c *CPU) {
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		c.cycles += 4
+		// PRM Table 8-4: 4(1/0) + ea calculation time.
+		// Hardware-verified tests (SingleStepTests/m68000) show
+		// BTST Dn,#imm takes 10 cycles, not 8 as the PRM predicts
+		// (4 base + 4 immediate = 8). The extra 2 cycles are
+		// undocumented in the PRM.
+		c.cycles += 4 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -98,7 +103,7 @@ func opBTSTstatic(c *CPU) {
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		c.cycles += 8
+		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -148,7 +153,11 @@ func opBCHGdyn(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		c.reg.D[reg] ^= mask
-		c.cycles += 8
+		if bitNum < 16 {
+			c.cycles += 6
+		} else {
+			c.cycles += 8
+		}
 	} else {
 		bitNum &= 7
 		dst := c.resolveEA(mode, reg, Byte)
@@ -160,7 +169,7 @@ func opBCHGdyn(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		dst.write(c, Byte, val^mask)
-		c.cycles += 8
+		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -190,7 +199,7 @@ func opBCHGstatic(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		dst.write(c, Byte, val^mask)
-		c.cycles += 12
+		c.cycles += 12 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -240,7 +249,11 @@ func opBCLRdyn(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		c.reg.D[reg] &^= mask
-		c.cycles += 10
+		if bitNum < 16 {
+			c.cycles += 8
+		} else {
+			c.cycles += 10
+		}
 	} else {
 		bitNum &= 7
 		dst := c.resolveEA(mode, reg, Byte)
@@ -252,7 +265,7 @@ func opBCLRdyn(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		dst.write(c, Byte, val&^mask)
-		c.cycles += 8
+		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -282,7 +295,7 @@ func opBCLRstatic(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		dst.write(c, Byte, val&^mask)
-		c.cycles += 12
+		c.cycles += 12 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -332,7 +345,11 @@ func opBSETdyn(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		c.reg.D[reg] |= mask
-		c.cycles += 8
+		if bitNum < 16 {
+			c.cycles += 6
+		} else {
+			c.cycles += 8
+		}
 	} else {
 		bitNum &= 7
 		dst := c.resolveEA(mode, reg, Byte)
@@ -344,7 +361,7 @@ func opBSETdyn(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		dst.write(c, Byte, val|mask)
-		c.cycles += 8
+		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
 	}
 }
 
@@ -374,6 +391,6 @@ func opBSETstatic(c *CPU) {
 			c.reg.SR &^= flagZ
 		}
 		dst.write(c, Byte, val|mask)
-		c.cycles += 12
+		c.cycles += 12 + eaFetchCycles(mode, reg, Byte)
 	}
 }

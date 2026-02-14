@@ -1,5 +1,7 @@
 package m68k
 
+import "math/bits"
+
 func init() {
 	registerMOVE()
 	registerMOVEA()
@@ -57,7 +59,7 @@ func opMOVE(c *CPU) {
 	dst.write(c, sz, val)
 
 	c.setFlagsLogical(val, sz)
-	c.cycles += 4
+	c.cycles += 4 + eaFetchCycles(srcMode, srcReg, sz) + eaWriteCycles(dstMode, dstReg, sz)
 }
 
 // moveSizeMap maps the MOVE size encoding to Size.
@@ -98,7 +100,7 @@ func opMOVEA(c *CPU) {
 	c.reg.A[an] = val
 
 	// MOVEA does not affect condition codes
-	c.cycles += 4
+	c.cycles += 4 + eaFetchCycles(srcMode, srcReg, sz)
 }
 
 // registerMOVEQ registers MOVEQ #imm8,Dn.
@@ -148,9 +150,21 @@ func opLEA(c *CPU) {
 	src := c.resolveEA(srcMode, srcReg, Long)
 	c.reg.A[an] = src.address()
 
-	c.cycles += 4
-	if srcMode >= 5 {
+	// PRM timing: (An)=4, d16(An)=8, d8(An,Xn)=12, abs.W=8, abs.L=12, d16(PC)=8, d8(PC,Xn)=12
+	switch srcMode {
+	case 2:
 		c.cycles += 4
+	case 5:
+		c.cycles += 8
+	case 6:
+		c.cycles += 12
+	case 7:
+		switch srcReg {
+		case 0, 2: // abs.W, d16(PC)
+			c.cycles += 8
+		case 1, 3: // abs.L, d8(PC,Xn)
+			c.cycles += 12
+		}
 	}
 }
 
@@ -178,7 +192,22 @@ func opPEA(c *CPU) {
 	src := c.resolveEA(srcMode, srcReg, Long)
 	c.pushLong(src.address())
 
-	c.cycles += 12
+	// PRM timing: (An)=12, d16(An)=16, d8(An,Xn)=20, abs.W=16, abs.L=20, d16(PC)=16, d8(PC,Xn)=20
+	switch srcMode {
+	case 2:
+		c.cycles += 12
+	case 5:
+		c.cycles += 16
+	case 6:
+		c.cycles += 20
+	case 7:
+		switch srcReg {
+		case 0, 2: // abs.W, d16(PC)
+			c.cycles += 16
+		case 1, 3: // abs.L, d8(PC,Xn)
+			c.cycles += 20
+		}
+	}
 }
 
 // registerMOVEM registers MOVEM.W and MOVEM.L (register to memory and memory to register).
@@ -300,7 +329,55 @@ func opMOVEM(c *CPU) {
 		}
 	}
 
-	c.cycles += 12
+	n := uint64(bits.OnesCount16(mask))
+
+	perReg := uint64(4)
+	if sz == Long {
+		perReg = 8
+	}
+
+	var base uint64
+	if dir == 0 {
+		// Register to memory (PRM Table 8-7)
+		switch mode {
+		case 2, 4: // (An), -(An)
+			base = 8
+		case 5: // d16(An)
+			base = 12
+		case 6: // d8(An,Xn)
+			base = 14
+		case 7:
+			switch reg {
+			case 0: // abs.W
+				base = 12
+			case 1: // abs.L
+				base = 16
+			}
+		}
+	} else {
+		// Memory to register (PRM Table 8-7)
+		switch mode {
+		case 2, 3: // (An), (An)+
+			base = 12
+		case 5: // d16(An)
+			base = 16
+		case 6: // d8(An,Xn)
+			base = 18
+		case 7:
+			switch reg {
+			case 0: // abs.W
+				base = 16
+			case 1: // abs.L
+				base = 20
+			case 2: // d16(PC)
+				base = 16
+			case 3: // d8(PC,Xn)
+				base = 18
+			}
+		}
+	}
+
+	c.cycles += base + n*perReg
 }
 
 // registerEXG registers EXG Dx,Dy / EXG Ax,Ay / EXG Dx,Ay.

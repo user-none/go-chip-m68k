@@ -171,8 +171,18 @@ is non-maskable.
 
 ## Design Notes
 
-- **Cycle counts** are approximate and suitable for system-level synchronization
-  but do not model per-access timing.
+- **Cycle counts** are per-instruction accurate for most instructions, using
+  addressing-mode-specific timing from the Motorola PRM. Known approximations:
+  - Multiply and divide use flat worst-case values instead of calculating timing
+    from the operand bit patterns: MULU (70 cycles, real range 38-70), MULS (70,
+    range 38-70), DIVU (140, range 76-140), DIVS (158, range 120-158).
+  - CHK exception processing uses a fixed 34-cycle cost (the standard exception
+    overhead) rather than the instruction-specific timing which varies by
+    addressing mode and trap condition.
+  - BTST Dn,#imm uses the PRM value of 8 cycles; hardware-verified tests
+    ([SingleStepTests/m68000](https://github.com/SingleStepTests/m68000)) show
+    10 cycles for this specific addressing mode.
+  - The EA addressing mode cost is included for all instructions.
 - **Opcode dispatch** uses a 64K-entry lookup table indexed by the first
   instruction word for constant-time decode.
 - **Address errors** on word/long access to odd addresses halt the CPU rather

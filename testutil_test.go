@@ -68,6 +68,7 @@ type cpuState struct {
 	SSP    uint32
 	RAM    [][2]uint32
 	Halted bool
+	Cycles int // Expected cycle count (0 = don't check)
 }
 
 // prefetchOffset is the 68000 prefetch pipeline offset.
@@ -96,7 +97,7 @@ func runTest(t *testing.T, init, want cpuState) {
 	cpu := &CPU{bus: bus}
 	cpu.SetState(init.D, a8, init.PC-prefetchOffset, init.SR, init.USP, init.SSP)
 
-	cpu.Step()
+	gotCycles := cpu.Step()
 
 	if want.Halted {
 		if !cpu.Halted() {
@@ -166,6 +167,11 @@ func runTest(t *testing.T, init, want cpuState) {
 		if gotVal != wantVal {
 			t.Errorf("RAM[0x%06X] = 0x%02X, want 0x%02X", addr, gotVal, wantVal)
 		}
+	}
+
+	// Compare cycles (when expected value is provided)
+	if want.Cycles > 0 && gotCycles != want.Cycles {
+		t.Errorf("cycles = %d, want %d", gotCycles, want.Cycles)
 	}
 }
 

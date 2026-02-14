@@ -187,8 +187,9 @@ func opNBCD(c *CPU) {
 	result := bcdSub(c, d, 0)
 	dst.write(c, Byte, result)
 
-	c.cycles += 6
-	if mode >= 2 {
-		c.cycles += 2
+	if mode == 0 {
+		c.cycles += 6
+	} else {
+		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
 	}
 }
