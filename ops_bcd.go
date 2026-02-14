@@ -53,20 +53,21 @@ func bcdAdd(c *CPU, s, d uint32) uint32 {
 	binary := s + d + x
 
 	lo := (s & 0x0F) + (d & 0x0F) + x
-	hi := (s & 0xF0) + (d & 0xF0)
+	hi := ((s >> 4) & 0x0F) + ((d >> 4) & 0x0F)
 
 	if lo > 9 {
 		lo += 6
 	}
-	result := hi + lo
+	hi += lo >> 4 // carry from low nibble correction
+	lo &= 0x0F
 
 	carry := false
-	if result > 0x99 {
-		result += 0x60
+	if hi > 9 {
+		hi += 6
 		carry = true
 	}
 
-	r8 := result & 0xFF
+	r8 := ((hi << 4) | lo) & 0xFF
 	c.reg.SR &^= flagC | flagX | flagN | flagV
 	if carry {
 		c.reg.SR |= flagC | flagX
@@ -131,17 +132,22 @@ func bcdSub(c *CPU, s, d uint32) uint32 {
 	binary := d - s - x
 
 	lo := (d & 0x0F) - (s & 0x0F) - x
-	result := binary
+	res := binary
 	if lo&0x10 != 0 {
-		result -= 6
+		res -= 6
 	}
 
-	borrow := d < s+x
-	if borrow {
-		result -= 0x60
+	// The hi correction (0x60) is applied when the binary subtraction
+	// underflowed. Borrow also includes cases where the lo-nibble correction
+	// alone pushed the result past the byte boundary (invalid BCD inputs).
+	binBorrow := d < s+x
+	borrow := binBorrow || res&0x100 != 0
+
+	if binBorrow {
+		res -= 0x60
 	}
 
-	r8 := result & 0xFF
+	r8 := res & 0xFF
 
 	c.reg.SR &^= flagC | flagX | flagN | flagV
 	if borrow {

@@ -130,7 +130,14 @@ func (c *CPU) Step() int {
 
 	handler := opcodeTable[c.ir]
 	if handler == nil {
-		c.exception(vecIllegalInstruction)
+		switch c.ir >> 12 {
+		case 0xA:
+			c.exception(vecLineA)
+		case 0xF:
+			c.exception(vecLineF)
+		default:
+			c.exception(vecIllegalInstruction)
+		}
 	} else {
 		handler(c)
 	}

@@ -923,8 +923,8 @@ func opDIVU(c *CPU) {
 
 	if quotient > 0xFFFF {
 		// Overflow
-		c.reg.SR |= flagV
-		c.reg.SR &^= flagC
+		c.reg.SR |= flagV | flagN
+		c.reg.SR &^= flagC | flagZ
 	} else {
 		c.reg.D[dn] = (remainder&0xFFFF)<<16 | (quotient & 0xFFFF)
 		c.setFlagsLogical(quotient, Word)
@@ -1197,5 +1197,6 @@ func opCHK(c *CPU) {
 		return
 	}
 
+	c.setFlagsCmp(uint32(val), uint32(bound), uint32(bound-val), Word)
 	c.cycles += 10 + eaFetchCycles(mode, reg, Word)
 }
