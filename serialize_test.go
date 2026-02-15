@@ -3,9 +3,8 @@ package m68k
 import "testing"
 
 func TestSerializeSize(t *testing.T) {
-	cpu := &CPU{bus: &testBus{}}
-	if got := cpu.SerializeSize(); got != 104 {
-		t.Fatalf("SerializeSize() = %d, want 104", got)
+	if got := SerializeSize; got != 104 {
+		t.Fatalf("SerializeSize = %d, want 104", got)
 	}
 }
 
@@ -35,7 +34,7 @@ func TestSerializeRoundTrip(t *testing.T) {
 	cpu.pendingVec = &vec
 	cpu.deficit = 42
 
-	buf := make([]byte, cpu.SerializeSize())
+	buf := make([]byte, SerializeSize)
 	if err := cpu.Serialize(buf); err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
@@ -111,7 +110,7 @@ func TestSerializeRoundTripNilVector(t *testing.T) {
 	cpu.pendingIPL = 3
 	cpu.pendingVec = nil
 
-	buf := make([]byte, cpu.SerializeSize())
+	buf := make([]byte, SerializeSize)
 	if err := cpu.Serialize(buf); err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
@@ -146,7 +145,7 @@ func TestSerializeDeserializeRejectsTooSmall(t *testing.T) {
 func TestSerializeDeserializeRejectsBadVersion(t *testing.T) {
 	cpu := &CPU{bus: &testBus{}}
 
-	buf := make([]byte, cpu.SerializeSize())
+	buf := make([]byte, SerializeSize)
 	if err := cpu.Serialize(buf); err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
@@ -171,7 +170,7 @@ func TestSerializeResumeExecution(t *testing.T) {
 	cpu1.Step()
 
 	// Serialize.
-	buf := make([]byte, cpu1.SerializeSize())
+	buf := make([]byte, SerializeSize)
 	if err := cpu1.Serialize(buf); err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}

@@ -8,18 +8,15 @@ import (
 // cpuSerializeVersion is incremented whenever the binary layout changes.
 const cpuSerializeVersion = 1
 
-// cpuSerializeSize is the number of bytes produced by CPU.Serialize.
+// SerializeSize is the number of bytes produced by CPU.Serialize.
 // Update this constant whenever the binary layout changes.
-const cpuSerializeSize = 104
-
-// SerializeSize returns the number of bytes needed for Serialize.
-func (c *CPU) SerializeSize() int { return cpuSerializeSize }
+const SerializeSize = 104
 
 // Serialize writes the full CPU state into buf, which must be at least
-// SerializeSize() bytes. Returns an error if the buffer is too small.
+// SerializeSize bytes. Returns an error if the buffer is too small.
 // Bus references are not included.
 func (c *CPU) Serialize(buf []byte) error {
-	if len(buf) < cpuSerializeSize {
+	if len(buf) < SerializeSize {
 		return errors.New("m68k: serialize buffer too small")
 	}
 
@@ -84,10 +81,10 @@ func boolByte(b bool) uint8 {
 }
 
 // Deserialize restores CPU state from buf, which must be at least
-// SerializeSize() bytes. Returns an error if the buffer is too small or
+// SerializeSize bytes. Returns an error if the buffer is too small or
 // the version does not match. The bus and cycleBus fields are left unchanged.
 func (c *CPU) Deserialize(buf []byte) error {
-	if len(buf) < cpuSerializeSize {
+	if len(buf) < SerializeSize {
 		return errors.New("m68k: deserialize buffer too small")
 	}
 	if buf[0] != cpuSerializeVersion {
