@@ -3,7 +3,6 @@ package m68k
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 )
 
 // cpuSerializeVersion is incremented whenever the binary layout changes.
@@ -53,17 +52,9 @@ func (c *CPU) Serialize(buf []byte) error {
 	be.PutUint16(buf[off:], c.ir)
 	off += 2
 
-	if c.stopped {
-		buf[off] = 1
-	} else {
-		buf[off] = 0
-	}
+	buf[off] = boolByte(c.stopped)
 	off++
-	if c.halted {
-		buf[off] = 1
-	} else {
-		buf[off] = 0
-	}
+	buf[off] = boolByte(c.halted)
 	off++
 
 	be.PutUint32(buf[off:], c.prevPC)
@@ -83,6 +74,13 @@ func (c *CPU) Serialize(buf []byte) error {
 
 	be.PutUint32(buf[off:], uint32(int32(c.deficit)))
 	return nil
+}
+
+func boolByte(b bool) uint8 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // Deserialize restores CPU state from buf, which must be at least
