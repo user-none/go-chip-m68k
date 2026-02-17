@@ -103,7 +103,7 @@ to implement `Bus`.
 | Function | Description |
 |---|---|
 | `Registers() Registers` | Snapshot of all programmer-visible registers |
-| `SetState(d, a, pc, sr, usp, ssp)` | Set all registers directly (for testing) |
+| `SetState(regs Registers)` | Set all registers directly (for testing) |
 
 ### Interrupts
 

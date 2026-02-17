@@ -99,7 +99,7 @@ func runSSTTest(t *testing.T, init, want cpuState) {
 	var a8 [8]uint32
 	copy(a8[:7], init.A[:])
 	cpu := &CPU{bus: bus}
-	cpu.SetState(init.D, a8, init.PC-prefetchOffset, init.SR, init.USP, init.SSP)
+	cpu.SetState(Registers{D: init.D, A: a8, PC: init.PC - prefetchOffset, SR: init.SR, USP: init.USP, SSP: init.SSP})
 
 	gotCycles := cpu.Step()
 

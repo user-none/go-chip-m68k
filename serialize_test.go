@@ -163,7 +163,7 @@ func TestSerializeResumeExecution(t *testing.T) {
 	pc := uint32(0x1000)
 	fillNOPs(bus, pc, 10)
 	cpu1 := &CPU{bus: bus}
-	cpu1.SetState([8]uint32{}, [8]uint32{}, pc, 0x2700, 0, 0x10000)
+	cpu1.SetState(Registers{PC: pc, SR: 0x2700, SSP: 0x10000})
 
 	// Run a few steps.
 	cpu1.Step()

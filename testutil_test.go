@@ -96,7 +96,7 @@ func runTest(t *testing.T, init, want cpuState) {
 	var a8 [8]uint32
 	copy(a8[:7], init.A[:])
 	cpu := &CPU{bus: bus}
-	cpu.SetState(init.D, a8, init.PC-prefetchOffset, init.SR, init.USP, init.SSP)
+	cpu.SetState(Registers{D: init.D, A: a8, PC: init.PC - prefetchOffset, SR: init.SR, USP: init.USP, SSP: init.SSP})
 
 	gotCycles := cpu.Step()
 
@@ -195,6 +195,6 @@ func newNOPCPU(nopCount int) (*CPU, *testBus) {
 	pc := uint32(0x1000)
 	fillNOPs(bus, pc, nopCount)
 	cpu := &CPU{bus: bus}
-	cpu.SetState([8]uint32{}, [8]uint32{}, pc, 0x2700, 0, 0x10000)
+	cpu.SetState(Registers{PC: pc, SR: 0x2700, SSP: 0x10000})
 	return cpu, bus
 }

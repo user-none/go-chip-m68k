@@ -779,7 +779,7 @@ func TestInstructionCycles(t *testing.T) {
 			if ssp == 0 {
 				ssp = 0x10000
 			}
-			cpu.SetState(tt.d, tt.a, pc, 0x2700, 0, ssp)
+			cpu.SetState(Registers{D: tt.d, A: tt.a, PC: pc, SR: 0x2700, SSP: ssp})
 
 			got := cpu.Step()
 			if got != tt.cycles {
@@ -798,9 +798,7 @@ func TestAddressError(t *testing.T) {
 		pc := uint32(0x1000)
 		writeWord(bus, pc, 0x3010)
 
-		var a [8]uint32
-		a[0] = 0x2001 // A0 = odd address
-		cpu.SetState([8]uint32{}, a, pc, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{A: [8]uint32{0x2001}, PC: pc, SR: 0x2700, SSP: 0x10000})
 		cpu.Step()
 
 		if !cpu.Halted() {
@@ -816,9 +814,7 @@ func TestAddressError(t *testing.T) {
 		pc := uint32(0x1000)
 		writeWord(bus, pc, 0x2010)
 
-		var a [8]uint32
-		a[0] = 0x2001 // A0 = odd address
-		cpu.SetState([8]uint32{}, a, pc, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{A: [8]uint32{0x2001}, PC: pc, SR: 0x2700, SSP: 0x10000})
 		cpu.Step()
 
 		if !cpu.Halted() {
@@ -834,9 +830,7 @@ func TestAddressError(t *testing.T) {
 		pc := uint32(0x1000)
 		writeWord(bus, pc, 0x3080)
 
-		var a [8]uint32
-		a[0] = 0x2001 // A0 = odd address
-		cpu.SetState([8]uint32{0x1234}, a, pc, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{D: [8]uint32{0x1234}, A: [8]uint32{0x2001}, PC: pc, SR: 0x2700, SSP: 0x10000})
 		cpu.Step()
 
 		if !cpu.Halted() {
@@ -852,9 +846,7 @@ func TestAddressError(t *testing.T) {
 		pc := uint32(0x1000)
 		writeWord(bus, pc, 0x2080)
 
-		var a [8]uint32
-		a[0] = 0x2001 // A0 = odd address
-		cpu.SetState([8]uint32{0x12345678}, a, pc, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{D: [8]uint32{0x12345678}, A: [8]uint32{0x2001}, PC: pc, SR: 0x2700, SSP: 0x10000})
 		cpu.Step()
 
 		if !cpu.Halted() {
@@ -870,10 +862,8 @@ func TestAddressError(t *testing.T) {
 		pc := uint32(0x1000)
 		writeWord(bus, pc, 0x1010)
 
-		var a [8]uint32
-		a[0] = 0x2001 // A0 = odd address
 		bus.mem[0x2001] = 0xAB
-		cpu.SetState([8]uint32{}, a, pc, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{A: [8]uint32{0x2001}, PC: pc, SR: 0x2700, SSP: 0x10000})
 		cpu.Step()
 
 		if cpu.Halted() {
@@ -893,9 +883,7 @@ func TestAddressError(t *testing.T) {
 		pc := uint32(0x1000)
 		writeWord(bus, pc, 0x1080)
 
-		var a [8]uint32
-		a[0] = 0x2001 // A0 = odd address
-		cpu.SetState([8]uint32{0xCD}, a, pc, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{D: [8]uint32{0xCD}, A: [8]uint32{0x2001}, PC: pc, SR: 0x2700, SSP: 0x10000})
 		cpu.Step()
 
 		if cpu.Halted() {
@@ -914,7 +902,7 @@ func TestAddressError(t *testing.T) {
 		writeWord(bus, 0x1000, 0x4E71)
 
 		// Set PC to an odd address
-		cpu.SetState([8]uint32{}, [8]uint32{}, 0x1001, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{PC: 0x1001, SR: 0x2700, SSP: 0x10000})
 		cycles := cpu.Step()
 
 		if !cpu.Halted() {
@@ -943,7 +931,7 @@ func TestAddressError(t *testing.T) {
 
 		// SSP is odd — the exception push (pushLong/pushWord) will try
 		// to write to an odd address, triggering the alignment check.
-		cpu.SetState([8]uint32{}, [8]uint32{}, pc, 0x2700, 0, 0x10001)
+		cpu.SetState(Registers{PC: pc, SR: 0x2700, SSP: 0x10001})
 		cpu.Step()
 
 		if !cpu.Halted() {
@@ -1103,7 +1091,7 @@ func TestStepCycles(t *testing.T) {
 		cpu, _ := newNOPCPU(1)
 
 		// Set PC to odd address to trigger halt
-		cpu.SetState([8]uint32{}, [8]uint32{}, 0x1001, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{PC: 0x1001, SR: 0x2700, SSP: 0x10000})
 		cpu.Step()
 
 		cycles := cpu.StepCycles(100)
@@ -1174,9 +1162,7 @@ func TestBusCycleStamp(t *testing.T) {
 
 		cpu := &CPU{bus: bus}
 		// Set A1 to a valid even address for the write destination
-		var a [8]uint32
-		a[1] = 0x2000
-		cpu.SetState([8]uint32{0x1234}, a, 0x1000, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{D: [8]uint32{0x1234}, A: [8]uint32{0, 0x2000}, PC: 0x1000, SR: 0x2700, SSP: 0x10000})
 		bus.cycles = nil // clear any prior accesses
 
 		before := cpu.Cycles()
@@ -1201,7 +1187,7 @@ func TestBusCycleStamp(t *testing.T) {
 		writeWord(&bus.testBus, 0x1002, 0x4E71)
 
 		cpu := &CPU{bus: bus}
-		cpu.SetState([8]uint32{}, [8]uint32{}, 0x1000, 0x2700, 0, 0x10000)
+		cpu.SetState(Registers{PC: 0x1000, SR: 0x2700, SSP: 0x10000})
 		bus.cycles = nil
 
 		// First NOP

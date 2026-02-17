@@ -333,13 +333,13 @@ func (c *CPU) setCCR(ccr uint8) {
 // SetState sets all programmer-visible registers directly without
 // performing a hardware reset. This is intended for testing, where
 // exact CPU state must be established before executing an instruction.
-func (c *CPU) SetState(d [8]uint32, a [8]uint32, pc uint32, sr uint16, usp, ssp uint32) {
+func (c *CPU) SetState(regs Registers) {
 	c.cycleBus, _ = c.bus.(CycleBus)
-	c.reg.D = d
-	c.reg.SR = sr
-	c.reg.USP = usp
-	c.reg.SSP = ssp
-	c.reg.PC = pc
+	c.reg.D = regs.D
+	c.reg.SR = regs.SR
+	c.reg.USP = regs.USP
+	c.reg.SSP = regs.SSP
+	c.reg.PC = regs.PC
 	c.stopped = false
 	c.halted = false
 	c.cycles = 0
@@ -349,11 +349,11 @@ func (c *CPU) SetState(d [8]uint32, a [8]uint32, pc uint32, sr uint16, usp, ssp 
 
 	// A7 is the active stack pointer: SSP in supervisor mode, USP in user mode
 	for i := 0; i < 7; i++ {
-		c.reg.A[i] = a[i]
+		c.reg.A[i] = regs.A[i]
 	}
-	if sr&flagS != 0 {
-		c.reg.A[7] = ssp
+	if regs.SR&flagS != 0 {
+		c.reg.A[7] = regs.SSP
 	} else {
-		c.reg.A[7] = usp
+		c.reg.A[7] = regs.USP
 	}
 }
