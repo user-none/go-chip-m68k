@@ -1133,6 +1133,18 @@ func TestStepCycles(t *testing.T) {
 	})
 }
 
+func TestAddCycles(t *testing.T) {
+	cpu, _ := newNOPCPU(1)
+
+	before := cpu.Cycles()
+	cpu.AddCycles(100)
+	after := cpu.Cycles()
+
+	if after-before != 100 {
+		t.Errorf("AddCycles(100): got delta %d, want 100", after-before)
+	}
+}
+
 func TestBusCycleStamp(t *testing.T) {
 	t.Run("reset passes cycle 0", func(t *testing.T) {
 		bus := &spyBus{}
