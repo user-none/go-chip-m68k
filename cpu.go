@@ -252,6 +252,13 @@ func (c *CPU) writeBus(sz Size, addr uint32, val uint32) {
 	}
 	addr &= 0xFFFFFF
 	val &= sz.Mask()
+	// The 68000 has a 16-bit data bus. During byte writes the CPU
+	// drives the same byte on both halves (D15-D8 and D7-D0).
+	// Replicate the byte so bus implementations see the full 16-bit
+	// value as it appears on real hardware.
+	if sz == Byte {
+		val = val<<8 | val
+	}
 	if c.cycleBus != nil {
 		c.cycleBus.WriteCycle(c.cycles, sz, addr, val)
 		return
