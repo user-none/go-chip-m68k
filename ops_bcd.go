@@ -34,12 +34,12 @@ func opABCDmem(c *CPU) {
 	rx := (c.ir >> 9) & 7
 	ry := c.ir & 7
 
-	src := c.resolveEA(4, uint8(ry), Byte) // -(Ay)
-	s := src.read(c, Byte)
-	dst := c.resolveEA(4, uint8(rx), Byte) // -(Ax)
-	d := dst.read(c, Byte)
+	src := c.resolveEA(4, uint8(ry), sizeByte) // -(Ay)
+	s := src.read(c, sizeByte)
+	dst := c.resolveEA(4, uint8(rx), sizeByte) // -(Ax)
+	d := dst.read(c, sizeByte)
 	result := bcdAdd(c, s, d)
-	dst.write(c, Byte, result)
+	dst.write(c, sizeByte, result)
 
 	c.cycles += 18
 }
@@ -113,12 +113,12 @@ func opSBCDmem(c *CPU) {
 	rx := (c.ir >> 9) & 7
 	ry := c.ir & 7
 
-	src := c.resolveEA(4, uint8(ry), Byte)
-	s := src.read(c, Byte)
-	dst := c.resolveEA(4, uint8(rx), Byte)
-	d := dst.read(c, Byte)
+	src := c.resolveEA(4, uint8(ry), sizeByte)
+	s := src.read(c, sizeByte)
+	dst := c.resolveEA(4, uint8(rx), sizeByte)
+	d := dst.read(c, sizeByte)
 	result := bcdSub(c, s, d)
-	dst.write(c, Byte, result)
+	dst.write(c, sizeByte, result)
 
 	c.cycles += 18
 }
@@ -188,14 +188,14 @@ func opNBCD(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	dst := c.resolveEA(mode, reg, Byte)
-	d := dst.read(c, Byte)
+	dst := c.resolveEA(mode, reg, sizeByte)
+	d := dst.read(c, sizeByte)
 	result := bcdSub(c, d, 0)
-	dst.write(c, Byte, result)
+	dst.write(c, sizeByte, result)
 
 	if mode == 0 {
 		c.cycles += 6
 	} else {
-		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
+		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }

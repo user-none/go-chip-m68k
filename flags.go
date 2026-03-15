@@ -13,7 +13,7 @@ const (
 )
 
 // setFlagsAdd sets XNZVC after an addition: result = dst + src.
-func (c *CPU) setFlagsAdd(src, dst, result uint32, sz Size) {
+func (c *CPU) setFlagsAdd(src, dst, result uint32, sz size) {
 	msb := sz.MSB()
 	mask := sz.Mask()
 	r := result & mask
@@ -33,13 +33,13 @@ func (c *CPU) setFlagsAdd(src, dst, result uint32, sz Size) {
 		c.reg.SR |= flagV
 	}
 	// Carry: unsigned overflow
-	if result&(msb<<1) != 0 || (sz == Long && ((s&d|(s|d)&^r)&msb != 0)) {
+	if result&(msb<<1) != 0 || (sz == sizeLong && ((s&d|(s|d)&^r)&msb != 0)) {
 		c.reg.SR |= flagC | flagX
 	}
 }
 
 // setFlagsSub sets XNZVC after a subtraction: result = dst - src.
-func (c *CPU) setFlagsSub(src, dst, result uint32, sz Size) {
+func (c *CPU) setFlagsSub(src, dst, result uint32, sz size) {
 	msb := sz.MSB()
 	mask := sz.Mask()
 	r := result & mask
@@ -66,7 +66,7 @@ func (c *CPU) setFlagsSub(src, dst, result uint32, sz Size) {
 
 // setFlagsCmp sets NZVC after a comparison (subtraction without storing).
 // Does not modify the X flag.
-func (c *CPU) setFlagsCmp(src, dst, result uint32, sz Size) {
+func (c *CPU) setFlagsCmp(src, dst, result uint32, sz size) {
 	msb := sz.MSB()
 	mask := sz.Mask()
 	r := result & mask
@@ -90,7 +90,7 @@ func (c *CPU) setFlagsCmp(src, dst, result uint32, sz Size) {
 }
 
 // setFlagsLogical sets NZ, clears VC after a logical operation.
-func (c *CPU) setFlagsLogical(result uint32, sz Size) {
+func (c *CPU) setFlagsLogical(result uint32, sz size) {
 	c.reg.SR &^= flagN | flagZ | flagV | flagC
 
 	if result&sz.Mask() == 0 {

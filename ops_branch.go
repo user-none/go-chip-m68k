@@ -151,7 +151,7 @@ func opJMP(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	dst := c.resolveEA(mode, reg, Word)
+	dst := c.resolveEA(mode, reg, sizeWord)
 	c.reg.PC = dst.address()
 
 	// PRM timing: (An)=8, d16(An)=10, d8(An,Xn)=14, abs.W=10, abs.L=12, d16(PC)=10, d8(PC,Xn)=14
@@ -195,7 +195,7 @@ func opJSR(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	dst := c.resolveEA(mode, reg, Word)
+	dst := c.resolveEA(mode, reg, sizeWord)
 	c.pushLong(c.reg.PC)
 	c.reg.PC = dst.address()
 
@@ -289,12 +289,12 @@ func opScc(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	dst := c.resolveEA(mode, reg, Byte)
+	dst := c.resolveEA(mode, reg, sizeByte)
 
 	if c.testCondition(cc) {
-		dst.write(c, Byte, 0xFF)
+		dst.write(c, sizeByte, 0xFF)
 	} else {
-		dst.write(c, Byte, 0x00)
+		dst.write(c, sizeByte, 0x00)
 	}
 
 	if mode == 0 {
@@ -304,6 +304,6 @@ func opScc(c *CPU) {
 			c.cycles += 4
 		}
 	} else {
-		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
+		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }

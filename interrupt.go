@@ -46,9 +46,9 @@ func (c *CPU) processInterrupt() {
 	}
 
 	// Read handler address
-	addr := c.readBus(Long, uint32(vectorNum)*4)
+	addr := c.readBus(sizeLong, uint32(vectorNum)*4)
 	if addr == 0 {
-		addr = c.readBus(Long, vecSpuriousInterrupt*4)
+		addr = c.readBus(sizeLong, vecSpuriousInterrupt*4)
 	}
 
 	c.reg.PC = addr

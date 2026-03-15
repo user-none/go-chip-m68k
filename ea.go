@@ -17,7 +17,7 @@ type ea struct {
 }
 
 // read returns the value at this effective address.
-func (e ea) read(c *CPU, sz Size) uint32 {
+func (e ea) read(c *CPU, sz size) uint32 {
 	switch e.mode {
 	case eaDataReg:
 		return c.reg.D[e.reg] & sz.Mask()
@@ -34,7 +34,7 @@ func (e ea) read(c *CPU, sz Size) uint32 {
 // write stores a value at this effective address.
 // Data register writes preserve upper bits for byte/word operations.
 // Address register writes always store the full 32-bit value.
-func (e ea) write(c *CPU, sz Size, val uint32) {
+func (e ea) write(c *CPU, sz size, val uint32) {
 	switch e.mode {
 	case eaDataReg:
 		mask := sz.Mask()
@@ -54,7 +54,7 @@ func (e ea) address() uint32 {
 // resolveEA decodes and resolves an effective address from a mode/register pair.
 // The mode is bits 5-3 and reg is bits 2-0 of the standard EA field.
 // Extension words are fetched from the instruction stream as needed.
-func (c *CPU) resolveEA(mode, reg uint8, sz Size) ea {
+func (c *CPU) resolveEA(mode, reg uint8, sz size) ea {
 	switch mode {
 	case 0: // Dn - Data register direct
 		return ea{mode: eaDataReg, reg: reg}
@@ -68,7 +68,7 @@ func (c *CPU) resolveEA(mode, reg uint8, sz Size) ea {
 	case 3: // (An)+ - Address register indirect with postincrement
 		addr := c.reg.A[reg]
 		inc := uint32(sz)
-		if reg == 7 && sz == Byte {
+		if reg == 7 && sz == sizeByte {
 			inc = 2 // SP always stays word-aligned
 		}
 		c.reg.A[reg] += inc
@@ -76,7 +76,7 @@ func (c *CPU) resolveEA(mode, reg uint8, sz Size) ea {
 
 	case 4: // -(An) - Address register indirect with predecrement
 		dec := uint32(sz)
-		if reg == 7 && sz == Byte {
+		if reg == 7 && sz == sizeByte {
 			dec = 2 // SP always stays word-aligned
 		}
 		c.reg.A[reg] -= dec
@@ -112,13 +112,13 @@ func (c *CPU) resolveEA(mode, reg uint8, sz Size) ea {
 
 		case 4: // #imm - Immediate
 			switch sz {
-			case Byte:
+			case sizeByte:
 				val := c.fetchPC()
 				return ea{mode: eaImmediate, imm: uint32(val & 0xFF)}
-			case Word:
+			case sizeWord:
 				val := c.fetchPC()
 				return ea{mode: eaImmediate, imm: uint32(val)}
-			case Long:
+			case sizeLong:
 				val := c.fetchPCLong()
 				return ea{mode: eaImmediate, imm: val}
 			}

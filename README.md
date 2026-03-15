@@ -32,8 +32,12 @@ type MyBus struct {
     ram [64 * 1024]byte
 }
 
-func (b *MyBus) Read(sz m68k.Size, addr uint32) uint32  { /* ... */ }
-func (b *MyBus) Write(sz m68k.Size, addr uint32, val uint32) { /* ... */ }
+func (b *MyBus) Read8(addr uint32) uint8    { /* ... */ }
+func (b *MyBus) Read16(addr uint32) uint16  { /* ... */ }
+func (b *MyBus) Read32(addr uint32) uint32  { /* ... */ }
+func (b *MyBus) Write8(addr uint32, val uint8)   { /* ... */ }
+func (b *MyBus) Write16(addr uint32, val uint16) { /* ... */ }
+func (b *MyBus) Write32(addr uint32, val uint32) { /* ... */ }
 func (b *MyBus) Reset() {}
 
 func main() {
@@ -53,16 +57,21 @@ func main() {
 
 ```go
 type Bus interface {
-    Read(op Size, addr uint32) uint32
-    Write(op Size, addr uint32, val uint32)
+    Read8(addr uint32) uint8
+    Read16(addr uint32) uint16
+    Read32(addr uint32) uint32
+    Write8(addr uint32, val uint8)
+    Write16(addr uint32, val uint16)
+    Write32(addr uint32, val uint32)
     Reset()
 }
 ```
 
-All addresses passed to `Bus` methods are masked to 24 bits by the CPU. The
-`Size` parameter indicates the access width (`Byte`, `Word`, or `Long`). Word
-and long accesses to odd addresses are detected by the CPU and cause an address
-error before reaching the bus.
+All addresses passed to `Bus` methods are masked to 24 bits by the CPU.
+Each method handles a specific access width: `Read8`/`Write8` for byte,
+`Read16`/`Write16` for word, and `Read32`/`Write32` for long. Word and long
+accesses to odd addresses are detected by the CPU and cause an address error
+before reaching the bus.
 
 `Reset()` is called when the CPU executes a RESET instruction, allowing the bus
 to reset connected peripherals.
@@ -99,14 +108,6 @@ a pending lower-level interrupt. Level 7 is non-maskable.
 ### Types
 
 ```go
-type Size int
-
-const (
-    Byte Size = 1  // 8-bit
-    Word Size = 2  // 16-bit
-    Long Size = 4  // 32-bit
-)
-
 type Registers struct {
     D   [8]uint32  // Data registers
     A   [8]uint32  // Address registers (A7 is active stack pointer)

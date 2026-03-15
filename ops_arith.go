@@ -27,14 +27,14 @@ func init() {
 }
 
 // sizeEncoding maps the standard 2-bit size field (bits 7-6) to Size.
-func sizeEncoding(bits uint16) Size {
+func sizeEncoding(bits uint16) size {
 	switch bits {
 	case 0:
-		return Byte
+		return sizeByte
 	case 1:
-		return Word
+		return sizeWord
 	case 2:
-		return Long
+		return sizeLong
 	}
 	return 0
 }
@@ -92,7 +92,7 @@ func opADDtoReg(c *CPU) {
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != Long {
+	if sz != sizeLong {
 		c.cycles += 4 + fetch
 	} else if mode >= 2 && !(mode == 7 && reg == 4) {
 		c.cycles += 6 + fetch
@@ -115,7 +115,7 @@ func opADDtoEA(c *CPU) {
 	dst.write(c, sz, result)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 12 + fetch
 	} else {
 		c.cycles += 8 + fetch
@@ -142,23 +142,23 @@ func registerADDA() {
 
 func opADDA(c *CPU) {
 	an := (c.ir >> 9) & 7
-	sz := Word
+	sz := sizeWord
 	if (c.ir>>6)&7 == 7 {
-		sz = Long
+		sz = sizeLong
 	}
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
 	src := c.resolveEA(mode, reg, sz)
 	val := src.read(c, sz)
-	if sz == Word {
+	if sz == sizeWord {
 		val = uint32(int32(int16(val)))
 	}
 	c.reg.A[an] += val
 
 	// ADDA does not affect condition codes
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == Long && mode >= 2 && !(mode == 7 && reg == 4) {
+	if sz == sizeLong && mode >= 2 && !(mode == 7 && reg == 4) {
 		c.cycles += 6 + fetch
 	} else {
 		c.cycles += 8 + fetch
@@ -190,7 +190,7 @@ func opADDI(c *CPU) {
 	reg := uint8(c.ir & 7)
 
 	var imm uint32
-	if sz == Long {
+	if sz == sizeLong {
 		imm = c.fetchPCLong()
 	} else {
 		imm = uint32(c.fetchPC()) & sz.Mask()
@@ -203,14 +203,14 @@ func opADDI(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 16
 		} else {
 			c.cycles += 8
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 20 + fetch
 		} else {
 			c.cycles += 12 + fetch
@@ -263,14 +263,14 @@ func opADDQ(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 8
 		} else {
 			c.cycles += 4
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -317,7 +317,7 @@ func opADDXreg(c *CPU) {
 	c.reg.D[rx] = (c.reg.D[rx] & ^mask) | (result & mask)
 
 	c.cycles += 4
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 4
 	}
 }
@@ -344,7 +344,7 @@ func opADDXmem(c *CPU) {
 	}
 
 	dst.write(c, sz, result)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 30
 	} else {
 		c.cycles += 18
@@ -399,7 +399,7 @@ func opSUBtoReg(c *CPU) {
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != Long {
+	if sz != sizeLong {
 		c.cycles += 4 + fetch
 	} else if mode >= 2 && !(mode == 7 && reg == 4) {
 		c.cycles += 6 + fetch
@@ -422,7 +422,7 @@ func opSUBtoEA(c *CPU) {
 	dst.write(c, sz, result)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 12 + fetch
 	} else {
 		c.cycles += 8 + fetch
@@ -449,22 +449,22 @@ func registerSUBA() {
 
 func opSUBA(c *CPU) {
 	an := (c.ir >> 9) & 7
-	sz := Word
+	sz := sizeWord
 	if (c.ir>>6)&7 == 7 {
-		sz = Long
+		sz = sizeLong
 	}
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
 	src := c.resolveEA(mode, reg, sz)
 	val := src.read(c, sz)
-	if sz == Word {
+	if sz == sizeWord {
 		val = uint32(int32(int16(val)))
 	}
 	c.reg.A[an] -= val
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == Long && mode >= 2 && !(mode == 7 && reg == 4) {
+	if sz == sizeLong && mode >= 2 && !(mode == 7 && reg == 4) {
 		c.cycles += 6 + fetch
 	} else {
 		c.cycles += 8 + fetch
@@ -496,7 +496,7 @@ func opSUBI(c *CPU) {
 	reg := uint8(c.ir & 7)
 
 	var imm uint32
-	if sz == Long {
+	if sz == sizeLong {
 		imm = c.fetchPCLong()
 	} else {
 		imm = uint32(c.fetchPC()) & sz.Mask()
@@ -509,14 +509,14 @@ func opSUBI(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 16
 		} else {
 			c.cycles += 8
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 20 + fetch
 		} else {
 			c.cycles += 12 + fetch
@@ -567,14 +567,14 @@ func opSUBQ(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 8
 		} else {
 			c.cycles += 4
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -619,7 +619,7 @@ func opSUBXreg(c *CPU) {
 	c.reg.D[rx] = (c.reg.D[rx] & ^mask) | (result & mask)
 
 	c.cycles += 4
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 4
 	}
 }
@@ -646,7 +646,7 @@ func opSUBXmem(c *CPU) {
 	}
 
 	dst.write(c, sz, result)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 30
 	} else {
 		c.cycles += 18
@@ -687,7 +687,7 @@ func opCMP(c *CPU) {
 	c.setFlagsCmp(s, d, result, sz)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 6 + fetch
 	} else {
 		c.cycles += 4 + fetch
@@ -714,21 +714,21 @@ func registerCMPA() {
 
 func opCMPA(c *CPU) {
 	an := (c.ir >> 9) & 7
-	sz := Word
+	sz := sizeWord
 	if (c.ir>>6)&7 == 7 {
-		sz = Long
+		sz = sizeLong
 	}
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
 	src := c.resolveEA(mode, reg, sz)
 	val := src.read(c, sz)
-	if sz == Word {
+	if sz == sizeWord {
 		val = uint32(int32(int16(val)))
 	}
 	d := c.reg.A[an]
 	result := d - val
-	c.setFlagsCmp(val, d, result, Long)
+	c.setFlagsCmp(val, d, result, sizeLong)
 
 	c.cycles += 6 + eaFetchCycles(mode, reg, sz)
 }
@@ -758,7 +758,7 @@ func opCMPI(c *CPU) {
 	reg := uint8(c.ir & 7)
 
 	var imm uint32
-	if sz == Long {
+	if sz == sizeLong {
 		imm = c.fetchPCLong()
 	} else {
 		imm = uint32(c.fetchPC()) & sz.Mask()
@@ -770,14 +770,14 @@ func opCMPI(c *CPU) {
 	c.setFlagsCmp(imm, d, result, sz)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 14
 		} else {
 			c.cycles += 8
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -810,7 +810,7 @@ func opCMPM(c *CPU) {
 	result := d - s
 	c.setFlagsCmp(s, d, result, sz)
 
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 20
 	} else {
 		c.cycles += 12
@@ -841,14 +841,14 @@ func opMULU(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	src := c.resolveEA(mode, reg, Word)
-	s := src.read(c, Word)
+	src := c.resolveEA(mode, reg, sizeWord)
+	s := src.read(c, sizeWord)
 	d := c.reg.D[dn] & 0xFFFF
 	result := s * d
 	c.reg.D[dn] = result
 
-	c.setFlagsLogical(result, Long)
-	c.cycles += 70 + eaFetchCycles(mode, reg, Word) // base varies 38-70, using worst-case
+	c.setFlagsLogical(result, sizeLong)
+	c.cycles += 70 + eaFetchCycles(mode, reg, sizeWord) // base varies 38-70, using worst-case
 }
 
 // --- MULS ---
@@ -875,14 +875,14 @@ func opMULS(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	src := c.resolveEA(mode, reg, Word)
-	s := int32(int16(src.read(c, Word)))
+	src := c.resolveEA(mode, reg, sizeWord)
+	s := int32(int16(src.read(c, sizeWord)))
 	d := int32(int16(c.reg.D[dn] & 0xFFFF))
 	result := uint32(s * d)
 	c.reg.D[dn] = result
 
-	c.setFlagsLogical(result, Long)
-	c.cycles += 70 + eaFetchCycles(mode, reg, Word) // base varies 38-70, using worst-case
+	c.setFlagsLogical(result, sizeLong)
+	c.cycles += 70 + eaFetchCycles(mode, reg, sizeWord) // base varies 38-70, using worst-case
 }
 
 // --- DIVU ---
@@ -909,8 +909,8 @@ func opDIVU(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	src := c.resolveEA(mode, reg, Word)
-	divisor := src.read(c, Word)
+	src := c.resolveEA(mode, reg, sizeWord)
+	divisor := src.read(c, sizeWord)
 
 	if divisor == 0 {
 		c.exception(vecDivideByZero)
@@ -927,10 +927,10 @@ func opDIVU(c *CPU) {
 		c.reg.SR &^= flagC | flagZ
 	} else {
 		c.reg.D[dn] = (remainder&0xFFFF)<<16 | (quotient & 0xFFFF)
-		c.setFlagsLogical(quotient, Word)
+		c.setFlagsLogical(quotient, sizeWord)
 	}
 
-	c.cycles += 140 + eaFetchCycles(mode, reg, Word) // base varies 76-140, using worst-case
+	c.cycles += 140 + eaFetchCycles(mode, reg, sizeWord) // base varies 76-140, using worst-case
 }
 
 // --- DIVS ---
@@ -957,8 +957,8 @@ func opDIVS(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	src := c.resolveEA(mode, reg, Word)
-	divisor := int32(int16(src.read(c, Word)))
+	src := c.resolveEA(mode, reg, sizeWord)
+	divisor := int32(int16(src.read(c, sizeWord)))
 
 	if divisor == 0 {
 		c.exception(vecDivideByZero)
@@ -974,10 +974,10 @@ func opDIVS(c *CPU) {
 		c.reg.SR &^= flagC | flagZ
 	} else {
 		c.reg.D[dn] = uint32(remainder&0xFFFF)<<16 | uint32(quotient)&0xFFFF
-		c.setFlagsLogical(uint32(quotient), Word)
+		c.setFlagsLogical(uint32(quotient), sizeWord)
 	}
 
-	c.cycles += 158 + eaFetchCycles(mode, reg, Word) // base varies 120-158, using worst-case
+	c.cycles += 158 + eaFetchCycles(mode, reg, sizeWord) // base varies 120-158, using worst-case
 }
 
 // --- NEG ---
@@ -1011,14 +1011,14 @@ func opNEG(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 6
 		} else {
 			c.cycles += 4
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -1066,14 +1066,14 @@ func opNEGX(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 6
 		} else {
 			c.cycles += 4
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -1113,14 +1113,14 @@ func opCLR(c *CPU) {
 	c.reg.SR |= flagZ
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 6
 		} else {
 			c.cycles += 4
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -1143,7 +1143,7 @@ func opEXTW(c *CPU) {
 	dn := c.ir & 7
 	val := uint32(int16(int8(c.reg.D[dn])))
 	c.reg.D[dn] = (c.reg.D[dn] & 0xFFFF0000) | (val & 0xFFFF)
-	c.setFlagsLogical(val, Word)
+	c.setFlagsLogical(val, sizeWord)
 	c.cycles += 4
 }
 
@@ -1151,7 +1151,7 @@ func opEXTL(c *CPU) {
 	dn := c.ir & 7
 	val := uint32(int32(int16(c.reg.D[dn])))
 	c.reg.D[dn] = val
-	c.setFlagsLogical(val, Long)
+	c.setFlagsLogical(val, sizeLong)
 	c.cycles += 4
 }
 
@@ -1181,8 +1181,8 @@ func opCHK(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	src := c.resolveEA(mode, reg, Word)
-	bound := int16(src.read(c, Word))
+	src := c.resolveEA(mode, reg, sizeWord)
+	bound := int16(src.read(c, sizeWord))
 	val := int16(c.reg.D[dn] & 0xFFFF)
 
 	if val < 0 {
@@ -1197,6 +1197,6 @@ func opCHK(c *CPU) {
 		return
 	}
 
-	c.setFlagsCmp(uint32(val), uint32(bound), uint32(bound-val), Word)
-	c.cycles += 10 + eaFetchCycles(mode, reg, Word)
+	c.setFlagsCmp(uint32(val), uint32(bound), uint32(bound-val), sizeWord)
+	c.cycles += 10 + eaFetchCycles(mode, reg, sizeWord)
 }

@@ -64,8 +64,8 @@ func opBTSTdyn(c *CPU) {
 		c.cycles += 6
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		if val&(1<<bitNum) == 0 {
 			c.reg.SR |= flagZ
 		} else {
@@ -76,7 +76,7 @@ func opBTSTdyn(c *CPU) {
 		// BTST Dn,#imm takes 10 cycles, not 8 as the PRM predicts
 		// (4 base + 4 immediate = 8). The extra 2 cycles are
 		// undocumented in the PRM.
-		c.cycles += 4 + eaFetchCycles(mode, reg, Byte)
+		c.cycles += 4 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -96,14 +96,14 @@ func opBTSTstatic(c *CPU) {
 		c.cycles += 10
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		if val&(1<<bitNum) == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
+		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -160,16 +160,16 @@ func opBCHGdyn(c *CPU) {
 		}
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, Byte, val^mask)
-		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
+		dst.write(c, sizeByte, val^mask)
+		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -190,16 +190,16 @@ func opBCHGstatic(c *CPU) {
 		c.cycles += 12
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, Byte, val^mask)
-		c.cycles += 12 + eaFetchCycles(mode, reg, Byte)
+		dst.write(c, sizeByte, val^mask)
+		c.cycles += 12 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -256,16 +256,16 @@ func opBCLRdyn(c *CPU) {
 		}
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, Byte, val&^mask)
-		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
+		dst.write(c, sizeByte, val&^mask)
+		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -286,16 +286,16 @@ func opBCLRstatic(c *CPU) {
 		c.cycles += 14
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, Byte, val&^mask)
-		c.cycles += 12 + eaFetchCycles(mode, reg, Byte)
+		dst.write(c, sizeByte, val&^mask)
+		c.cycles += 12 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -352,16 +352,16 @@ func opBSETdyn(c *CPU) {
 		}
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, Byte, val|mask)
-		c.cycles += 8 + eaFetchCycles(mode, reg, Byte)
+		dst.write(c, sizeByte, val|mask)
+		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -382,15 +382,15 @@ func opBSETstatic(c *CPU) {
 		c.cycles += 12
 	} else {
 		bitNum &= 7
-		dst := c.resolveEA(mode, reg, Byte)
-		val := dst.read(c, Byte)
+		dst := c.resolveEA(mode, reg, sizeByte)
+		val := dst.read(c, sizeByte)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, Byte, val|mask)
-		c.cycles += 12 + eaFetchCycles(mode, reg, Byte)
+		dst.write(c, sizeByte, val|mask)
+		c.cycles += 12 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }

@@ -59,7 +59,7 @@ func opANDtoReg(c *CPU) {
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != Long {
+	if sz != sizeLong {
 		c.cycles += 4 + fetch
 	} else if mode >= 2 && !(mode == 7 && reg == 4) {
 		c.cycles += 6 + fetch
@@ -80,7 +80,7 @@ func opANDtoEA(c *CPU) {
 	dst.write(c, sz, result)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 12 + fetch
 	} else {
 		c.cycles += 8 + fetch
@@ -112,7 +112,7 @@ func opANDI(c *CPU) {
 	reg := uint8(c.ir & 7)
 
 	var imm uint32
-	if sz == Long {
+	if sz == sizeLong {
 		imm = c.fetchPCLong()
 	} else {
 		imm = uint32(c.fetchPC()) & sz.Mask()
@@ -124,14 +124,14 @@ func opANDI(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 16
 		} else {
 			c.cycles += 8
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 20 + fetch
 		} else {
 			c.cycles += 12 + fetch
@@ -183,7 +183,7 @@ func opORtoReg(c *CPU) {
 	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != Long {
+	if sz != sizeLong {
 		c.cycles += 4 + fetch
 	} else if mode >= 2 && !(mode == 7 && reg == 4) {
 		c.cycles += 6 + fetch
@@ -204,7 +204,7 @@ func opORtoEA(c *CPU) {
 	dst.write(c, sz, result)
 
 	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 12 + fetch
 	} else {
 		c.cycles += 8 + fetch
@@ -236,7 +236,7 @@ func opORI(c *CPU) {
 	reg := uint8(c.ir & 7)
 
 	var imm uint32
-	if sz == Long {
+	if sz == sizeLong {
 		imm = c.fetchPCLong()
 	} else {
 		imm = uint32(c.fetchPC()) & sz.Mask()
@@ -248,14 +248,14 @@ func opORI(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 16
 		} else {
 			c.cycles += 8
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 20 + fetch
 		} else {
 			c.cycles += 12 + fetch
@@ -296,14 +296,14 @@ func opEOR(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 8
 		} else {
 			c.cycles += 4
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -336,7 +336,7 @@ func opEORI(c *CPU) {
 	reg := uint8(c.ir & 7)
 
 	var imm uint32
-	if sz == Long {
+	if sz == sizeLong {
 		imm = c.fetchPCLong()
 	} else {
 		imm = uint32(c.fetchPC()) & sz.Mask()
@@ -348,14 +348,14 @@ func opEORI(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 16
 		} else {
 			c.cycles += 8
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 20 + fetch
 		} else {
 			c.cycles += 12 + fetch
@@ -393,14 +393,14 @@ func opNOT(c *CPU) {
 	dst.write(c, sz, result)
 
 	if mode == 0 {
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 6
 		} else {
 			c.cycles += 4
 		}
 	} else {
 		fetch := eaFetchCycles(mode, reg, sz)
-		if sz == Long {
+		if sz == sizeLong {
 			c.cycles += 12 + fetch
 		} else {
 			c.cycles += 8 + fetch
@@ -462,19 +462,19 @@ func opTAS(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	dst := c.resolveEA(mode, reg, Byte)
-	val := dst.read(c, Byte)
+	dst := c.resolveEA(mode, reg, sizeByte)
+	val := dst.read(c, sizeByte)
 
 	// Test: set N and Z like TST.B, clear V and C
-	c.setFlagsLogical(val, Byte)
+	c.setFlagsLogical(val, sizeByte)
 
 	// Set bit 7
-	dst.write(c, Byte, val|0x80)
+	dst.write(c, sizeByte, val|0x80)
 
 	if mode == 0 {
 		c.cycles += 4
 	} else {
-		c.cycles += 10 + eaFetchCycles(mode, reg, Byte)
+		c.cycles += 10 + eaFetchCycles(mode, reg, sizeByte)
 	}
 }
 
@@ -545,7 +545,7 @@ func opShiftReg(c *CPU) {
 	c.reg.D[dreg] = (c.reg.D[dreg] & ^mask) | (result & mask)
 
 	c.cycles += 6 + 2*uint64(count)
-	if sz == Long {
+	if sz == sizeLong {
 		c.cycles += 2
 	}
 }
@@ -556,16 +556,16 @@ func opShiftMem(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	dst := c.resolveEA(mode, reg, Word)
-	val := dst.read(c, Word)
-	result := doShift(c, val, 1, dir, typ, Word)
-	dst.write(c, Word, result)
+	dst := c.resolveEA(mode, reg, sizeWord)
+	val := dst.read(c, sizeWord)
+	result := doShift(c, val, 1, dir, typ, sizeWord)
+	dst.write(c, sizeWord, result)
 
-	c.cycles += 8 + eaFetchCycles(mode, reg, Word)
+	c.cycles += 8 + eaFetchCycles(mode, reg, sizeWord)
 }
 
 // doShift performs the actual shift/rotate operation.
-func doShift(c *CPU, val, count uint32, dir, typ uint16, sz Size) uint32 {
+func doShift(c *CPU, val, count uint32, dir, typ uint16, sz size) uint32 {
 	msb := sz.MSB()
 	mask := sz.Mask()
 

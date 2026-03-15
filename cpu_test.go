@@ -1110,8 +1110,8 @@ func TestStepCycles(t *testing.T) {
 		}
 
 		// Set up reset vectors so Reset() works
-		bus.Write(Long, 0, 0x10000) // SSP
-		bus.Write(Long, 4, 0x1000)  // PC
+		bus.Write32(0, 0x10000) // SSP
+		bus.Write32(4, 0x1000)  // PC
 		fillNOPs(bus, 0x1000, 10)
 
 		cpu.Reset()

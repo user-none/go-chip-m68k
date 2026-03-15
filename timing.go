@@ -4,7 +4,7 @@ package m68k
 // For register-direct modes (Dn, An) returns 0.
 // For memory/immediate modes returns the fetch cost.
 // Long adds 4 to all non-zero values.
-func eaFetchCycles(mode, reg uint8, sz Size) uint64 {
+func eaFetchCycles(mode, reg uint8, sz size) uint64 {
 	var base uint64
 	switch mode {
 	case 0, 1: // Dn, An
@@ -31,7 +31,7 @@ func eaFetchCycles(mode, reg uint8, sz Size) uint64 {
 			base = 4
 		}
 	}
-	if sz == Long && base > 0 {
+	if sz == sizeLong && base > 0 {
 		base += 4
 	}
 	return base
@@ -39,7 +39,7 @@ func eaFetchCycles(mode, reg uint8, sz Size) uint64 {
 
 // eaWriteCycles returns the destination EA write timing.
 // Same as eaFetchCycles except -(An) costs 4 (not 6).
-func eaWriteCycles(mode, reg uint8, sz Size) uint64 {
+func eaWriteCycles(mode, reg uint8, sz size) uint64 {
 	var base uint64
 	switch mode {
 	case 0, 1: // Dn, An
@@ -58,7 +58,7 @@ func eaWriteCycles(mode, reg uint8, sz Size) uint64 {
 			base = 12
 		}
 	}
-	if sz == Long && base > 0 {
+	if sz == sizeLong && base > 0 {
 		base += 4
 	}
 	return base

@@ -12,9 +12,15 @@ import "log"
 
 // Bus provides word-aligned memory access for the CPU.
 // All addresses are 24-bit (masked by the CPU before calling).
+// Word and long accesses to odd addresses are detected by the CPU
+// and cause an address error before reaching the bus.
 type Bus interface {
-	Read(op Size, addr uint32) uint32
-	Write(op Size, addr uint32, val uint32)
+	Read8(addr uint32) uint8
+	Read16(addr uint32) uint16
+	Read32(addr uint32) uint32
+	Write8(addr uint32, val uint8)
+	Write16(addr uint32, val uint16)
+	Write32(addr uint32, val uint32)
 	Reset()
 }
 
@@ -70,10 +76,10 @@ func (c *CPU) Reset() {
 	c.pendingIPL = 0
 	c.pendingVec = nil
 
-	ssp := c.bus.Read(Long, 0)
+	ssp := c.bus.Read32(0)
 	c.reg.A[7] = ssp
 	c.reg.SSP = ssp
-	c.reg.PC = c.bus.Read(Long, 4)
+	c.reg.PC = c.bus.Read32(4)
 }
 
 // Halted returns true if the CPU is halted due to a double bus fault.
@@ -203,27 +209,35 @@ func (c *CPU) RequestInterrupt(level uint8, vector *uint8) {
 
 // readBus reads from the bus with 24-bit address masking.
 // Word and long accesses to odd addresses halt the CPU (address error).
-func (c *CPU) readBus(sz Size, addr uint32) uint32 {
+func (c *CPU) readBus(sz size, addr uint32) uint32 {
 	if c.halted {
 		return 0
 	}
-	if sz != Byte && addr&1 != 0 {
+	if sz != sizeByte && addr&1 != 0 {
 		log.Printf("[m68k] address error: read %s from odd addr=%06x PC=%06x prevPC=%06x IR=%04x",
 			sz, addr&0xFFFFFF, c.reg.PC, c.prevPC, c.ir)
 		c.halted = true
 		return 0
 	}
 	addr &= 0xFFFFFF
-	return c.bus.Read(sz, addr)
+	switch sz {
+	case sizeByte:
+		return uint32(c.bus.Read8(addr))
+	case sizeWord:
+		return uint32(c.bus.Read16(addr))
+	case sizeLong:
+		return uint32(c.bus.Read32(addr))
+	}
+	return 0
 }
 
 // writeBus writes to the bus with 24-bit address masking.
 // Word and long accesses to odd addresses halt the CPU (address error).
-func (c *CPU) writeBus(sz Size, addr uint32, val uint32) {
+func (c *CPU) writeBus(sz size, addr uint32, val uint32) {
 	if c.halted {
 		return
 	}
-	if sz != Byte && addr&1 != 0 {
+	if sz != sizeByte && addr&1 != 0 {
 		log.Printf("[m68k] address error: write %s to odd addr=%06x val=%08x PC=%06x prevPC=%06x IR=%04x",
 			sz, addr&0xFFFFFF, val&sz.Mask(), c.reg.PC, c.prevPC, c.ir)
 		c.halted = true
@@ -231,19 +245,19 @@ func (c *CPU) writeBus(sz Size, addr uint32, val uint32) {
 	}
 	addr &= 0xFFFFFF
 	val &= sz.Mask()
-	// The 68000 has a 16-bit data bus. During byte writes the CPU
-	// drives the same byte on both halves (D15-D8 and D7-D0).
-	// Replicate the byte so bus implementations see the full 16-bit
-	// value as it appears on real hardware.
-	if sz == Byte {
-		val = val<<8 | val
+	switch sz {
+	case sizeByte:
+		c.bus.Write8(addr, uint8(val))
+	case sizeWord:
+		c.bus.Write16(addr, uint16(val))
+	case sizeLong:
+		c.bus.Write32(addr, val)
 	}
-	c.bus.Write(sz, addr, val)
 }
 
 // fetchPC reads a 16-bit word at the current PC and advances PC by 2.
 func (c *CPU) fetchPC() uint16 {
-	val := c.readBus(Word, c.reg.PC)
+	val := c.readBus(sizeWord, c.reg.PC)
 	c.reg.PC += 2
 	return uint16(val)
 }
@@ -258,25 +272,25 @@ func (c *CPU) fetchPCLong() uint32 {
 // pushWord pushes a 16-bit word onto the active stack (A7).
 func (c *CPU) pushWord(val uint16) {
 	c.reg.A[7] -= 2
-	c.writeBus(Word, c.reg.A[7], uint32(val))
+	c.writeBus(sizeWord, c.reg.A[7], uint32(val))
 }
 
 // pushLong pushes a 32-bit long onto the active stack (A7).
 func (c *CPU) pushLong(val uint32) {
 	c.reg.A[7] -= 4
-	c.writeBus(Long, c.reg.A[7], val)
+	c.writeBus(sizeLong, c.reg.A[7], val)
 }
 
 // popWord pops a 16-bit word from the active stack (A7).
 func (c *CPU) popWord() uint16 {
-	val := c.readBus(Word, c.reg.A[7])
+	val := c.readBus(sizeWord, c.reg.A[7])
 	c.reg.A[7] += 2
 	return uint16(val)
 }
 
 // popLong pops a 32-bit long from the active stack (A7).
 func (c *CPU) popLong() uint32 {
-	val := c.readBus(Long, c.reg.A[7])
+	val := c.readBus(sizeLong, c.reg.A[7])
 	c.reg.A[7] += 4
 	return val
 }

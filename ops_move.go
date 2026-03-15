@@ -64,7 +64,7 @@ func opMOVE(c *CPU) {
 
 // moveSizeMap maps the MOVE size encoding to Size.
 // MOVE uses non-standard encoding: 01=Byte, 11=Word, 10=Long.
-var moveSizeMap = [4]Size{0, Byte, Long, Word}
+var moveSizeMap = [4]size{0, sizeByte, sizeLong, sizeWord}
 
 // registerMOVEA registers MOVEA.W and MOVEA.L opcodes.
 // Encoding: 00SS DDD0 01ss ssss (destination mode = 001 = An)
@@ -94,7 +94,7 @@ func opMOVEA(c *CPU) {
 	val := src.read(c, sz)
 
 	// MOVEA.W sign-extends to 32 bits
-	if sz == Word {
+	if sz == sizeWord {
 		val = uint32(int32(int16(val)))
 	}
 	c.reg.A[an] = val
@@ -118,7 +118,7 @@ func opMOVEQ(c *CPU) {
 	dn := (c.ir >> 9) & 7
 	data := int8(c.ir & 0xFF) // sign-extend to 8 bits
 	c.reg.D[dn] = uint32(int32(data))
-	c.setFlagsLogical(c.reg.D[dn], Long)
+	c.setFlagsLogical(c.reg.D[dn], sizeLong)
 	c.cycles += 4
 }
 
@@ -147,7 +147,7 @@ func opLEA(c *CPU) {
 	srcMode := uint8((c.ir >> 3) & 7)
 	srcReg := uint8(c.ir & 7)
 
-	src := c.resolveEA(srcMode, srcReg, Long)
+	src := c.resolveEA(srcMode, srcReg, sizeLong)
 	c.reg.A[an] = src.address()
 
 	// PRM timing: (An)=4, d16(An)=8, d8(An,Xn)=12, abs.W=8, abs.L=12, d16(PC)=8, d8(PC,Xn)=12
@@ -189,7 +189,7 @@ func opPEA(c *CPU) {
 	srcMode := uint8((c.ir >> 3) & 7)
 	srcReg := uint8(c.ir & 7)
 
-	src := c.resolveEA(srcMode, srcReg, Long)
+	src := c.resolveEA(srcMode, srcReg, sizeLong)
 	c.pushLong(src.address())
 
 	// PRM timing: (An)=12, d16(An)=16, d8(An,Xn)=20, abs.W=16, abs.L=20, d16(PC)=16, d8(PC,Xn)=20
@@ -250,9 +250,9 @@ func opMOVEM(c *CPU) {
 	mode := uint8((c.ir >> 3) & 7)
 	reg := uint8(c.ir & 7)
 
-	sz := Word
+	sz := sizeWord
 	if szBit != 0 {
-		sz = Long
+		sz = sizeLong
 	}
 
 	mask := c.fetchPC() // register list mask
@@ -297,7 +297,7 @@ func opMOVEM(c *CPU) {
 			for i := 0; i < 16; i++ {
 				if mask&(1<<uint(i)) != 0 {
 					val := c.readBus(sz, addr)
-					if sz == Word {
+					if sz == sizeWord {
 						val = uint32(int32(int16(val)))
 					}
 					if i < 8 {
@@ -315,7 +315,7 @@ func opMOVEM(c *CPU) {
 			for i := 0; i < 16; i++ {
 				if mask&(1<<uint(i)) != 0 {
 					val := c.readBus(sz, addr)
-					if sz == Word {
+					if sz == sizeWord {
 						val = uint32(int32(int16(val)))
 					}
 					if i < 8 {
@@ -332,7 +332,7 @@ func opMOVEM(c *CPU) {
 	n := uint64(bits.OnesCount16(mask))
 
 	perReg := uint64(4)
-	if sz == Long {
+	if sz == sizeLong {
 		perReg = 8
 	}
 
@@ -424,7 +424,7 @@ func opSWAP(c *CPU) {
 	dn := c.ir & 7
 	val := c.reg.D[dn]
 	c.reg.D[dn] = (val>>16)&0xFFFF | (val&0xFFFF)<<16
-	c.setFlagsLogical(c.reg.D[dn], Long)
+	c.setFlagsLogical(c.reg.D[dn], sizeLong)
 	c.cycles += 4
 }
 
@@ -453,29 +453,29 @@ func opMOVEP(c *CPU) {
 
 	switch opmode {
 	case 4: // MOVEP.W mem→reg
-		b0 := c.readBus(Byte, addr)
-		b1 := c.readBus(Byte, addr+2)
+		b0 := c.readBus(sizeByte, addr)
+		b1 := c.readBus(sizeByte, addr+2)
 		val := (b0 << 8) | b1
 		c.reg.D[dn] = (c.reg.D[dn] & 0xFFFF0000) | (val & 0xFFFF)
 		c.cycles += 16
 	case 5: // MOVEP.L mem→reg
-		b0 := c.readBus(Byte, addr)
-		b1 := c.readBus(Byte, addr+2)
-		b2 := c.readBus(Byte, addr+4)
-		b3 := c.readBus(Byte, addr+6)
+		b0 := c.readBus(sizeByte, addr)
+		b1 := c.readBus(sizeByte, addr+2)
+		b2 := c.readBus(sizeByte, addr+4)
+		b3 := c.readBus(sizeByte, addr+6)
 		c.reg.D[dn] = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 		c.cycles += 24
 	case 6: // MOVEP.W reg→mem
 		val := c.reg.D[dn]
-		c.writeBus(Byte, addr, (val>>8)&0xFF)
-		c.writeBus(Byte, addr+2, val&0xFF)
+		c.writeBus(sizeByte, addr, (val>>8)&0xFF)
+		c.writeBus(sizeByte, addr+2, val&0xFF)
 		c.cycles += 16
 	case 7: // MOVEP.L reg→mem
 		val := c.reg.D[dn]
-		c.writeBus(Byte, addr, (val>>24)&0xFF)
-		c.writeBus(Byte, addr+2, (val>>16)&0xFF)
-		c.writeBus(Byte, addr+4, (val>>8)&0xFF)
-		c.writeBus(Byte, addr+6, val&0xFF)
+		c.writeBus(sizeByte, addr, (val>>24)&0xFF)
+		c.writeBus(sizeByte, addr+2, (val>>16)&0xFF)
+		c.writeBus(sizeByte, addr+4, (val>>8)&0xFF)
+		c.writeBus(sizeByte, addr+6, val&0xFF)
 		c.cycles += 24
 	}
 	// MOVEP does not affect condition codes

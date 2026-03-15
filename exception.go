@@ -55,10 +55,10 @@ func (c *CPU) exception(vector int) {
 	c.pushWord(oldSR)
 
 	// Read handler address from vector table
-	addr := c.readBus(Long, uint32(vector)*4)
+	addr := c.readBus(sizeLong, uint32(vector)*4)
 	if addr == 0 {
 		// Uninitialized vector: try the uninitialized-interrupt vector
-		addr = c.readBus(Long, vecUninitialized*4)
+		addr = c.readBus(sizeLong, vecUninitialized*4)
 		if addr == 0 {
 			// Double fault on uninitialized vectors: halt
 			c.halted = true

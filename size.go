@@ -1,22 +1,22 @@
 package m68k
 
-// Size represents the operand width of a memory access or ALU operation.
-type Size int
+// size represents the operand width of a memory access or ALU operation.
+type size int
 
 const (
-	Byte Size = 1
-	Word Size = 2
-	Long Size = 4
+	sizeByte size = 1
+	sizeWord size = 2
+	sizeLong size = 4
 )
 
 // Mask returns a bitmask covering the valid bits for this size.
-func (s Size) Mask() uint32 {
+func (s size) Mask() uint32 {
 	switch s {
-	case Byte:
+	case sizeByte:
 		return 0xFF
-	case Word:
+	case sizeWord:
 		return 0xFFFF
-	case Long:
+	case sizeLong:
 		return 0xFFFFFFFF
 	default:
 		return 0
@@ -24,13 +24,13 @@ func (s Size) Mask() uint32 {
 }
 
 // MSB returns the most-significant bit position for this size.
-func (s Size) MSB() uint32 {
+func (s size) MSB() uint32 {
 	switch s {
-	case Byte:
+	case sizeByte:
 		return 0x80
-	case Word:
+	case sizeWord:
 		return 0x8000
-	case Long:
+	case sizeLong:
 		return 0x80000000
 	default:
 		return 0
@@ -38,18 +38,18 @@ func (s Size) MSB() uint32 {
 }
 
 // Bits returns the number of bits for this size.
-func (s Size) Bits() uint32 {
+func (s size) Bits() uint32 {
 	return uint32(s) * 8
 }
 
 // String returns a human-readable name for this size.
-func (s Size) String() string {
+func (s size) String() string {
 	switch s {
-	case Byte:
+	case sizeByte:
 		return "byte"
-	case Word:
+	case sizeWord:
 		return "word"
-	case Long:
+	case sizeLong:
 		return "long"
 	default:
 		return "unknown"
