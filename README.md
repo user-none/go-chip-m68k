@@ -67,24 +67,6 @@ error before reaching the bus.
 `Reset()` is called when the CPU executes a RESET instruction, allowing the bus
 to reset connected peripherals.
 
-### CycleBus (Optional)
-
-Buses that need per-access cycle timestamps (e.g., for device timing or DMA
-synchronization) can additionally implement the `CycleBus` interface:
-
-```go
-type CycleBus interface {
-    Bus
-    ReadCycle(cycle uint64, op Size, addr uint32) uint32
-    WriteCycle(cycle uint64, op Size, addr uint32, val uint32)
-}
-```
-
-When the bus passed to `New()` implements `CycleBus`, the CPU calls `ReadCycle`
-and `WriteCycle` instead of `Read` and `Write`, passing the current cycle count
-as the first argument. Simple buses that don't need timing information only need
-to implement `Bus`.
-
 ## API
 
 ### CPU Lifecycle

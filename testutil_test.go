@@ -40,23 +40,6 @@ func (b *testBus) Write(sz Size, addr uint32, val uint32) {
 
 func (b *testBus) Reset() {}
 
-// spyBus wraps testBus and records the cycle value from each ReadCycle/WriteCycle call.
-// It implements CycleBus; the embedded testBus satisfies the Bus part automatically.
-type spyBus struct {
-	testBus
-	cycles []uint64
-}
-
-func (b *spyBus) ReadCycle(cycle uint64, sz Size, addr uint32) uint32 {
-	b.cycles = append(b.cycles, cycle)
-	return b.testBus.Read(sz, addr)
-}
-
-func (b *spyBus) WriteCycle(cycle uint64, sz Size, addr uint32, val uint32) {
-	b.cycles = append(b.cycles, cycle)
-	b.testBus.Write(sz, addr, val)
-}
-
 // cpuState captures the full programmer-visible state for a test case.
 // RAM entries are [address, byte_value] pairs.
 // A[7] is unused; the active stack pointer is derived from USP/SSP/SR.
