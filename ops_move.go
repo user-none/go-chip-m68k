@@ -37,7 +37,7 @@ func registerMOVE() {
 							continue
 						}
 						opcode := szBits | dstReg<<9 | dstMode<<6 | srcMode<<3 | srcReg
-						opcodeTable[opcode] = opMOVE
+						opcodeTable[opcode] = makeMOVE(srcMode, srcReg, dstMode, dstReg)
 					}
 				}
 			}
@@ -45,21 +45,36 @@ func registerMOVE() {
 	}
 }
 
-func opMOVE(c *CPU) {
-	sz := moveSizeMap[(c.ir>>12)&3]
-	srcMode := uint8((c.ir >> 3) & 7)
-	srcReg := uint8(c.ir & 7)
-	dstMode := uint8((c.ir >> 6) & 7)
-	dstReg := uint8((c.ir >> 9) & 7)
+func makeMOVE(srcMode, srcReg, dstMode, dstReg uint16) opFunc {
+	read := makeEARead(srcMode, srcReg)
+	srcBase, srcLong := eaFetchConst(srcMode, srcReg)
+	dstBase, dstLong := eaWriteConst(dstMode, dstReg)
 
-	src := c.resolveEA(srcMode, srcReg, sz)
-	val := src.read(c, sz)
-
-	dst := c.resolveEA(dstMode, dstReg, sz)
-	dst.write(c, sz, val)
-
-	c.setFlagsLogical(val, sz)
-	c.cycles += 4 + eaFetchCycles(srcMode, srcReg, sz) + eaWriteCycles(dstMode, dstReg, sz)
+	if dstMode == 0 {
+		return func(c *CPU) {
+			sz := moveSizeMap[(c.ir>>12)&3]
+			val := read(c, sz)
+			mask := sz.Mask()
+			c.reg.D[dstReg] = (c.reg.D[dstReg] & ^mask) | (val & mask)
+			c.setFlagsLogical(val, sz)
+			c.cycles += 4 + srcBase + dstBase
+			if sz == sizeLong {
+				c.cycles += srcLong + dstLong
+			}
+		}
+	}
+	dstAddr := makeEAMemAddr(dstMode, dstReg)
+	return func(c *CPU) {
+		sz := moveSizeMap[(c.ir>>12)&3]
+		val := read(c, sz)
+		a := dstAddr(c, sz)
+		c.writeBus(sz, a, val)
+		c.setFlagsLogical(val, sz)
+		c.cycles += 4 + srcBase + dstBase
+		if sz == sizeLong {
+			c.cycles += srcLong + dstLong
+		}
+	}
 }
 
 // moveSizeMap maps the MOVE size encoding to Size.
@@ -77,30 +92,29 @@ func registerMOVEA() {
 						continue
 					}
 					opcode := szBits | dstReg<<9 | 1<<6 | srcMode<<3 | srcReg
-					opcodeTable[opcode] = opMOVEA
+					opcodeTable[opcode] = makeMOVEA(dstReg, srcMode, srcReg)
 				}
 			}
 		}
 	}
 }
 
-func opMOVEA(c *CPU) {
-	sz := moveSizeMap[(c.ir>>12)&3]
-	srcMode := uint8((c.ir >> 3) & 7)
-	srcReg := uint8(c.ir & 7)
-	an := (c.ir >> 9) & 7
-
-	src := c.resolveEA(srcMode, srcReg, sz)
-	val := src.read(c, sz)
-
-	// MOVEA.W sign-extends to 32 bits
-	if sz == sizeWord {
-		val = uint32(int32(int16(val)))
+func makeMOVEA(an, srcMode, srcReg uint16) opFunc {
+	read := makeEARead(srcMode, srcReg)
+	eaBase, eaLong := eaFetchConst(srcMode, srcReg)
+	return func(c *CPU) {
+		sz := moveSizeMap[(c.ir>>12)&3]
+		val := read(c, sz)
+		if sz == sizeWord {
+			val = uint32(int32(int16(val)))
+		}
+		c.reg.A[an] = val
+		// MOVEA does not affect condition codes
+		c.cycles += 4 + eaBase
+		if sz == sizeLong {
+			c.cycles += eaLong
+		}
 	}
-	c.reg.A[an] = val
-
-	// MOVEA does not affect condition codes
-	c.cycles += 4 + eaFetchCycles(srcMode, srcReg, sz)
 }
 
 // registerMOVEQ registers MOVEQ #imm8,Dn.
@@ -136,35 +150,33 @@ func registerLEA() {
 					continue
 				}
 				opcode := 0x41C0 | an<<9 | srcMode<<3 | srcReg
-				opcodeTable[opcode] = opLEA
+				opcodeTable[opcode] = makeLEA(an, srcMode, srcReg)
 			}
 		}
 	}
 }
 
-func opLEA(c *CPU) {
-	an := (c.ir >> 9) & 7
-	srcMode := uint8((c.ir >> 3) & 7)
-	srcReg := uint8(c.ir & 7)
-
-	src := c.resolveEA(srcMode, srcReg, sizeLong)
-	c.reg.A[an] = src.address()
-
-	// PRM timing: (An)=4, d16(An)=8, d8(An,Xn)=12, abs.W=8, abs.L=12, d16(PC)=8, d8(PC,Xn)=12
+func makeLEA(an, srcMode, srcReg uint16) opFunc {
+	addr := makeEAMemAddr(srcMode, srcReg)
+	var cycles uint64
 	switch srcMode {
 	case 2:
-		c.cycles += 4
+		cycles = 4
 	case 5:
-		c.cycles += 8
+		cycles = 8
 	case 6:
-		c.cycles += 12
+		cycles = 12
 	case 7:
 		switch srcReg {
-		case 0, 2: // abs.W, d16(PC)
-			c.cycles += 8
-		case 1, 3: // abs.L, d8(PC,Xn)
-			c.cycles += 12
+		case 0, 2:
+			cycles = 8
+		case 1, 3:
+			cycles = 12
 		}
+	}
+	return func(c *CPU) {
+		c.reg.A[an] = addr(c, sizeLong)
+		c.cycles += cycles
 	}
 }
 
@@ -180,33 +192,32 @@ func registerPEA() {
 				continue
 			}
 			opcode := 0x4840 | srcMode<<3 | srcReg
-			opcodeTable[opcode] = opPEA
+			opcodeTable[opcode] = makePEA(srcMode, srcReg)
 		}
 	}
 }
 
-func opPEA(c *CPU) {
-	srcMode := uint8((c.ir >> 3) & 7)
-	srcReg := uint8(c.ir & 7)
-
-	src := c.resolveEA(srcMode, srcReg, sizeLong)
-	c.pushLong(src.address())
-
-	// PRM timing: (An)=12, d16(An)=16, d8(An,Xn)=20, abs.W=16, abs.L=20, d16(PC)=16, d8(PC,Xn)=20
+func makePEA(srcMode, srcReg uint16) opFunc {
+	addr := makeEAMemAddr(srcMode, srcReg)
+	var cycles uint64
 	switch srcMode {
 	case 2:
-		c.cycles += 12
+		cycles = 12
 	case 5:
-		c.cycles += 16
+		cycles = 16
 	case 6:
-		c.cycles += 20
+		cycles = 20
 	case 7:
 		switch srcReg {
-		case 0, 2: // abs.W, d16(PC)
-			c.cycles += 16
-		case 1, 3: // abs.L, d8(PC,Xn)
-			c.cycles += 20
+		case 0, 2:
+			cycles = 16
+		case 1, 3:
+			cycles = 20
 		}
+	}
+	return func(c *CPU) {
+		c.pushLong(addr(c, sizeLong))
+		c.cycles += cycles
 	}
 }
 
@@ -260,12 +271,12 @@ func opMOVEM(c *CPU) {
 	if dir == 0 {
 		// Register to memory
 		if mode == 4 {
-			// -(An): mask is reversed — bit 0=A7, bit 15=D0
+			// -(An): mask is reversed -- bit 0=A7, bit 15=D0
 			addr := c.reg.A[reg]
 			for i := 0; i < 16; i++ {
 				if mask&(1<<uint(i)) != 0 {
 					addr -= uint32(sz)
-					ri := 15 - i // reversed: bit 0→reg 15(A7), bit 15→reg 0(D0)
+					ri := 15 - i // reversed: bit 0->reg 15(A7), bit 15->reg 0(D0)
 					if ri < 8 {
 						c.writeBus(sz, addr, c.reg.D[ri])
 					} else {
@@ -436,10 +447,10 @@ func opSWAP(c *CPU) {
 func registerMOVEP() {
 	for dn := uint16(0); dn < 8; dn++ {
 		for an := uint16(0); an < 8; an++ {
-			opcodeTable[0x0108|dn<<9|an] = opMOVEP // W, mem→reg
-			opcodeTable[0x0148|dn<<9|an] = opMOVEP // L, mem→reg
-			opcodeTable[0x0188|dn<<9|an] = opMOVEP // W, reg→mem
-			opcodeTable[0x01C8|dn<<9|an] = opMOVEP // L, reg→mem
+			opcodeTable[0x0108|dn<<9|an] = opMOVEP // W, mem->reg
+			opcodeTable[0x0148|dn<<9|an] = opMOVEP // L, mem->reg
+			opcodeTable[0x0188|dn<<9|an] = opMOVEP // W, reg->mem
+			opcodeTable[0x01C8|dn<<9|an] = opMOVEP // L, reg->mem
 		}
 	}
 }
@@ -452,25 +463,25 @@ func opMOVEP(c *CPU) {
 	addr := uint32(int32(c.reg.A[an]) + int32(disp))
 
 	switch opmode {
-	case 4: // MOVEP.W mem→reg
+	case 4: // MOVEP.W mem->reg
 		b0 := c.readBus(sizeByte, addr)
 		b1 := c.readBus(sizeByte, addr+2)
 		val := (b0 << 8) | b1
 		c.reg.D[dn] = (c.reg.D[dn] & 0xFFFF0000) | (val & 0xFFFF)
 		c.cycles += 16
-	case 5: // MOVEP.L mem→reg
+	case 5: // MOVEP.L mem->reg
 		b0 := c.readBus(sizeByte, addr)
 		b1 := c.readBus(sizeByte, addr+2)
 		b2 := c.readBus(sizeByte, addr+4)
 		b3 := c.readBus(sizeByte, addr+6)
 		c.reg.D[dn] = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 		c.cycles += 24
-	case 6: // MOVEP.W reg→mem
+	case 6: // MOVEP.W reg->mem
 		val := c.reg.D[dn]
 		c.writeBus(sizeByte, addr, (val>>8)&0xFF)
 		c.writeBus(sizeByte, addr+2, val&0xFF)
 		c.cycles += 16
-	case 7: // MOVEP.L reg→mem
+	case 7: // MOVEP.L reg->mem
 		val := c.reg.D[dn]
 		c.writeBus(sizeByte, addr, (val>>24)&0xFF)
 		c.writeBus(sizeByte, addr+2, (val>>16)&0xFF)

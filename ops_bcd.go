@@ -179,23 +179,27 @@ func registerNBCD() {
 			if mode == 7 && reg > 1 {
 				continue
 			}
-			opcodeTable[0x4800|mode<<3|reg] = opNBCD
+			opcodeTable[0x4800|mode<<3|reg] = makeNBCD(mode, reg)
 		}
 	}
 }
 
-func opNBCD(c *CPU) {
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sizeByte)
-	d := dst.read(c, sizeByte)
-	result := bcdSub(c, d, 0)
-	dst.write(c, sizeByte, result)
-
+func makeNBCD(mode, reg uint16) opFunc {
 	if mode == 0 {
-		c.cycles += 6
-	} else {
-		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
+		return func(c *CPU) {
+			d := c.reg.D[reg] & 0xFF
+			result := bcdSub(c, d, 0)
+			c.reg.D[reg] = (c.reg.D[reg] & 0xFFFFFF00) | (result & 0xFF)
+			c.cycles += 6
+		}
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		a := addr(c, sizeByte)
+		d := c.readBus(sizeByte, a)
+		result := bcdSub(c, d, 0)
+		c.writeBus(sizeByte, a, result)
+		c.cycles += 8 + eaBase
 	}
 }

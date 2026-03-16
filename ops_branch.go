@@ -142,35 +142,34 @@ func registerJMP() {
 				continue
 			}
 			opcode := 0x4EC0 | mode<<3 | reg
-			opcodeTable[opcode] = opJMP
+			opcodeTable[opcode] = makeJMP(mode, reg)
 		}
 	}
 }
 
-func opJMP(c *CPU) {
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sizeWord)
-	c.reg.PC = dst.address()
-
-	// PRM timing: (An)=8, d16(An)=10, d8(An,Xn)=14, abs.W=10, abs.L=12, d16(PC)=10, d8(PC,Xn)=14
+func makeJMP(mode, reg uint16) opFunc {
+	addr := makeEAMemAddr(mode, reg)
+	var cycles uint64
 	switch mode {
 	case 2:
-		c.cycles += 8
+		cycles = 8
 	case 5:
-		c.cycles += 10
+		cycles = 10
 	case 6:
-		c.cycles += 14
+		cycles = 14
 	case 7:
 		switch reg {
-		case 0, 2: // abs.W, d16(PC)
-			c.cycles += 10
-		case 1: // abs.L
-			c.cycles += 12
-		case 3: // d8(PC,Xn)
-			c.cycles += 14
+		case 0, 2:
+			cycles = 10
+		case 1:
+			cycles = 12
+		case 3:
+			cycles = 14
 		}
+	}
+	return func(c *CPU) {
+		c.reg.PC = addr(c, sizeWord)
+		c.cycles += cycles
 	}
 }
 
@@ -186,36 +185,36 @@ func registerJSR() {
 				continue
 			}
 			opcode := 0x4E80 | mode<<3 | reg
-			opcodeTable[opcode] = opJSR
+			opcodeTable[opcode] = makeJSR(mode, reg)
 		}
 	}
 }
 
-func opJSR(c *CPU) {
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sizeWord)
-	c.pushLong(c.reg.PC)
-	c.reg.PC = dst.address()
-
-	// PRM timing: (An)=16, d16(An)=18, d8(An,Xn)=22, abs.W=18, abs.L=20, d16(PC)=18, d8(PC,Xn)=22
+func makeJSR(mode, reg uint16) opFunc {
+	addr := makeEAMemAddr(mode, reg)
+	var cycles uint64
 	switch mode {
 	case 2:
-		c.cycles += 16
+		cycles = 16
 	case 5:
-		c.cycles += 18
+		cycles = 18
 	case 6:
-		c.cycles += 22
+		cycles = 22
 	case 7:
 		switch reg {
-		case 0, 2: // abs.W, d16(PC)
-			c.cycles += 18
-		case 1: // abs.L
-			c.cycles += 20
-		case 3: // d8(PC,Xn)
-			c.cycles += 22
+		case 0, 2:
+			cycles = 18
+		case 1:
+			cycles = 20
+		case 3:
+			cycles = 22
 		}
+	}
+	return func(c *CPU) {
+		target := addr(c, sizeWord)
+		c.pushLong(c.reg.PC)
+		c.reg.PC = target
+		c.cycles += cycles
 	}
 }
 
@@ -278,32 +277,35 @@ func registerScc() {
 					continue
 				}
 				opcode := 0x50C0 | cc<<8 | mode<<3 | reg
-				opcodeTable[opcode] = opScc
+				opcodeTable[opcode] = makeScc(mode, reg)
 			}
 		}
 	}
 }
 
-func opScc(c *CPU) {
-	cc := (c.ir >> 8) & 0xF
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sizeByte)
-
-	if c.testCondition(cc) {
-		dst.write(c, sizeByte, 0xFF)
-	} else {
-		dst.write(c, sizeByte, 0x00)
-	}
-
+func makeScc(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if c.testCondition(cc) {
-			c.cycles += 6
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			cc := (c.ir >> 8) & 0xF
+			if c.testCondition(cc) {
+				c.reg.D[reg] = (c.reg.D[reg] & 0xFFFFFF00) | 0xFF
+				c.cycles += 6
+			} else {
+				c.reg.D[reg] = c.reg.D[reg] & 0xFFFFFF00
+				c.cycles += 4
+			}
 		}
-	} else {
-		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		cc := (c.ir >> 8) & 0xF
+		a := addr(c, sizeByte)
+		if c.testCondition(cc) {
+			c.writeBus(sizeByte, a, 0xFF)
+		} else {
+			c.writeBus(sizeByte, a, 0x00)
+		}
+		c.cycles += 8 + eaBase
 	}
 }

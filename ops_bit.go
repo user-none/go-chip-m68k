@@ -28,7 +28,7 @@ func registerBTST() {
 					continue
 				}
 				opcode := 0x0100 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opBTSTdyn
+				opcodeTable[opcode] = makeBTSTdyn(dn, mode, reg)
 			}
 		}
 	}
@@ -42,68 +42,60 @@ func registerBTST() {
 				continue
 			}
 			opcode := 0x0800 | mode<<3 | reg
-			opcodeTable[opcode] = opBTSTstatic
+			opcodeTable[opcode] = makeBTSTstatic(mode, reg)
 		}
 	}
 }
 
-func opBTSTdyn(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-	bitNum := c.reg.D[dn]
-
+func makeBTSTdyn(dn, mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		val := c.reg.D[reg]
+		return func(c *CPU) {
+			bitNum := c.reg.D[dn] & 31
+			if c.reg.D[reg]&(1<<bitNum) == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.cycles += 6
+		}
+	}
+	read := makeEARead(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := c.reg.D[dn] & 7
+		val := read(c, sizeByte)
 		if val&(1<<bitNum) == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		c.cycles += 6
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
-		if val&(1<<bitNum) == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
-		}
-		// PRM Table 8-4: 4(1/0) + ea calculation time.
-		// Hardware-verified tests (SingleStepTests/m68000) show
-		// BTST Dn,#imm takes 10 cycles, not 8 as the PRM predicts
-		// (4 base + 4 immediate = 8). The extra 2 cycles are
-		// undocumented in the PRM.
-		c.cycles += 4 + eaFetchCycles(mode, reg, sizeByte)
+		c.cycles += 4 + eaBase
 	}
 }
 
-func opBTSTstatic(c *CPU) {
-	bitNum := uint32(c.fetchPC() & 0xFF)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
+func makeBTSTstatic(mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		val := c.reg.D[reg]
+		return func(c *CPU) {
+			bitNum := uint32(c.fetchPC()&0xFF) & 31
+			if c.reg.D[reg]&(1<<bitNum) == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.cycles += 10
+		}
+	}
+	read := makeEARead(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := uint32(c.fetchPC()&0xFF) & 7
+		val := read(c, sizeByte)
 		if val&(1<<bitNum) == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		c.cycles += 10
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
-		if val&(1<<bitNum) == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
-		}
-		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
+		c.cycles += 8 + eaBase
 	}
 }
 
@@ -120,7 +112,7 @@ func registerBCHG() {
 					continue
 				}
 				opcode := 0x0140 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opBCHGdyn
+				opcodeTable[opcode] = makeBCHGdyn(dn, mode, reg)
 			}
 		}
 	}
@@ -133,73 +125,74 @@ func registerBCHG() {
 				continue
 			}
 			opcode := 0x0840 | mode<<3 | reg
-			opcodeTable[opcode] = opBCHGstatic
+			opcodeTable[opcode] = makeBCHGstatic(mode, reg)
 		}
 	}
 }
 
-func opBCHGdyn(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-	bitNum := c.reg.D[dn]
-
+func makeBCHGdyn(dn, mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		mask := uint32(1) << bitNum
-		if c.reg.D[reg]&mask == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
+		return func(c *CPU) {
+			bitNum := c.reg.D[dn] & 31
+			mask := uint32(1) << bitNum
+			if c.reg.D[reg]&mask == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.reg.D[reg] ^= mask
+			if bitNum < 16 {
+				c.cycles += 6
+			} else {
+				c.cycles += 8
+			}
 		}
-		c.reg.D[reg] ^= mask
-		if bitNum < 16 {
-			c.cycles += 6
-		} else {
-			c.cycles += 8
-		}
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := c.reg.D[dn] & 7
+		a := addr(c, sizeByte)
+		val := c.readBus(sizeByte, a)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, sizeByte, val^mask)
-		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
+		c.writeBus(sizeByte, a, val^mask)
+		c.cycles += 8 + eaBase
 	}
 }
 
-func opBCHGstatic(c *CPU) {
-	bitNum := uint32(c.fetchPC() & 0xFF)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
+func makeBCHGstatic(mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		mask := uint32(1) << bitNum
-		if c.reg.D[reg]&mask == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
+		return func(c *CPU) {
+			bitNum := uint32(c.fetchPC()&0xFF) & 31
+			mask := uint32(1) << bitNum
+			if c.reg.D[reg]&mask == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.reg.D[reg] ^= mask
+			c.cycles += 12
 		}
-		c.reg.D[reg] ^= mask
-		c.cycles += 12
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := uint32(c.fetchPC()&0xFF) & 7
+		a := addr(c, sizeByte)
+		val := c.readBus(sizeByte, a)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, sizeByte, val^mask)
-		c.cycles += 12 + eaFetchCycles(mode, reg, sizeByte)
+		c.writeBus(sizeByte, a, val^mask)
+		c.cycles += 12 + eaBase
 	}
 }
 
@@ -216,7 +209,7 @@ func registerBCLR() {
 					continue
 				}
 				opcode := 0x0180 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opBCLRdyn
+				opcodeTable[opcode] = makeBCLRdyn(dn, mode, reg)
 			}
 		}
 	}
@@ -229,73 +222,74 @@ func registerBCLR() {
 				continue
 			}
 			opcode := 0x0880 | mode<<3 | reg
-			opcodeTable[opcode] = opBCLRstatic
+			opcodeTable[opcode] = makeBCLRstatic(mode, reg)
 		}
 	}
 }
 
-func opBCLRdyn(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-	bitNum := c.reg.D[dn]
-
+func makeBCLRdyn(dn, mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		mask := uint32(1) << bitNum
-		if c.reg.D[reg]&mask == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
+		return func(c *CPU) {
+			bitNum := c.reg.D[dn] & 31
+			mask := uint32(1) << bitNum
+			if c.reg.D[reg]&mask == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.reg.D[reg] &^= mask
+			if bitNum < 16 {
+				c.cycles += 8
+			} else {
+				c.cycles += 10
+			}
 		}
-		c.reg.D[reg] &^= mask
-		if bitNum < 16 {
-			c.cycles += 8
-		} else {
-			c.cycles += 10
-		}
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := c.reg.D[dn] & 7
+		a := addr(c, sizeByte)
+		val := c.readBus(sizeByte, a)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, sizeByte, val&^mask)
-		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
+		c.writeBus(sizeByte, a, val&^mask)
+		c.cycles += 8 + eaBase
 	}
 }
 
-func opBCLRstatic(c *CPU) {
-	bitNum := uint32(c.fetchPC() & 0xFF)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
+func makeBCLRstatic(mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		mask := uint32(1) << bitNum
-		if c.reg.D[reg]&mask == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
+		return func(c *CPU) {
+			bitNum := uint32(c.fetchPC()&0xFF) & 31
+			mask := uint32(1) << bitNum
+			if c.reg.D[reg]&mask == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.reg.D[reg] &^= mask
+			c.cycles += 14
 		}
-		c.reg.D[reg] &^= mask
-		c.cycles += 14
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := uint32(c.fetchPC()&0xFF) & 7
+		a := addr(c, sizeByte)
+		val := c.readBus(sizeByte, a)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, sizeByte, val&^mask)
-		c.cycles += 12 + eaFetchCycles(mode, reg, sizeByte)
+		c.writeBus(sizeByte, a, val&^mask)
+		c.cycles += 12 + eaBase
 	}
 }
 
@@ -312,7 +306,7 @@ func registerBSET() {
 					continue
 				}
 				opcode := 0x01C0 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opBSETdyn
+				opcodeTable[opcode] = makeBSETdyn(dn, mode, reg)
 			}
 		}
 	}
@@ -325,72 +319,73 @@ func registerBSET() {
 				continue
 			}
 			opcode := 0x08C0 | mode<<3 | reg
-			opcodeTable[opcode] = opBSETstatic
+			opcodeTable[opcode] = makeBSETstatic(mode, reg)
 		}
 	}
 }
 
-func opBSETdyn(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-	bitNum := c.reg.D[dn]
-
+func makeBSETdyn(dn, mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		mask := uint32(1) << bitNum
-		if c.reg.D[reg]&mask == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
+		return func(c *CPU) {
+			bitNum := c.reg.D[dn] & 31
+			mask := uint32(1) << bitNum
+			if c.reg.D[reg]&mask == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.reg.D[reg] |= mask
+			if bitNum < 16 {
+				c.cycles += 6
+			} else {
+				c.cycles += 8
+			}
 		}
-		c.reg.D[reg] |= mask
-		if bitNum < 16 {
-			c.cycles += 6
-		} else {
-			c.cycles += 8
-		}
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := c.reg.D[dn] & 7
+		a := addr(c, sizeByte)
+		val := c.readBus(sizeByte, a)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, sizeByte, val|mask)
-		c.cycles += 8 + eaFetchCycles(mode, reg, sizeByte)
+		c.writeBus(sizeByte, a, val|mask)
+		c.cycles += 8 + eaBase
 	}
 }
 
-func opBSETstatic(c *CPU) {
-	bitNum := uint32(c.fetchPC() & 0xFF)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
+func makeBSETstatic(mode, reg uint16) opFunc {
 	if mode == 0 {
-		bitNum &= 31
-		mask := uint32(1) << bitNum
-		if c.reg.D[reg]&mask == 0 {
-			c.reg.SR |= flagZ
-		} else {
-			c.reg.SR &^= flagZ
+		return func(c *CPU) {
+			bitNum := uint32(c.fetchPC()&0xFF) & 31
+			mask := uint32(1) << bitNum
+			if c.reg.D[reg]&mask == 0 {
+				c.reg.SR |= flagZ
+			} else {
+				c.reg.SR &^= flagZ
+			}
+			c.reg.D[reg] |= mask
+			c.cycles += 12
 		}
-		c.reg.D[reg] |= mask
-		c.cycles += 12
-	} else {
-		bitNum &= 7
-		dst := c.resolveEA(mode, reg, sizeByte)
-		val := dst.read(c, sizeByte)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bitNum := uint32(c.fetchPC()&0xFF) & 7
+		a := addr(c, sizeByte)
+		val := c.readBus(sizeByte, a)
 		mask := uint32(1) << bitNum
 		if val&mask == 0 {
 			c.reg.SR |= flagZ
 		} else {
 			c.reg.SR &^= flagZ
 		}
-		dst.write(c, sizeByte, val|mask)
-		c.cycles += 12 + eaFetchCycles(mode, reg, sizeByte)
+		c.writeBus(sizeByte, a, val|mask)
+		c.cycles += 12 + eaBase
 	}
 }

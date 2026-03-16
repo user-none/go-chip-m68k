@@ -28,7 +28,7 @@ func registerAND() {
 						continue
 					}
 					opcode := 0xC000 | dn<<9 | szBits<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opANDtoReg
+					opcodeTable[opcode] = makeANDtoReg(dn, mode, reg)
 				}
 			}
 			// Dn AND <ea> -> <ea>
@@ -38,52 +38,47 @@ func registerAND() {
 						continue
 					}
 					opcode := 0xC000 | dn<<9 | (szBits+4)<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opANDtoEA
+					opcodeTable[opcode] = makeANDtoEA(dn, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opANDtoReg(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	result := src.read(c, sz) & (c.reg.D[dn] & sz.Mask())
-	c.setFlagsLogical(result, sz)
-
-	mask := sz.Mask()
-	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != sizeLong {
-		c.cycles += 4 + fetch
-	} else if mode >= 2 && !(mode == 7 && reg == 4) {
-		c.cycles += 6 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeANDtoReg(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	isMem := mode >= 2 && !(mode == 7 && reg == 4)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		result := read(c, sz) & (c.reg.D[dn] & sz.Mask())
+		c.setFlagsLogical(result, sz)
+		mask := sz.Mask()
+		c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
+		if sz != sizeLong {
+			c.cycles += 4 + eaBase
+		} else if isMem {
+			c.cycles += 6 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase + eaLong
+		}
 	}
 }
 
-func opANDtoEA(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	result := dst.read(c, sz) & (c.reg.D[dn] & sz.Mask())
-	c.setFlagsLogical(result, sz)
-	dst.write(c, sz, result)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == sizeLong {
-		c.cycles += 12 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeANDtoEA(dn, mode, reg uint16) opFunc {
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
+		a := addr(c, sz)
+		result := c.readBus(sz, a) & (c.reg.D[dn] & sz.Mask())
+		c.setFlagsLogical(result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 12 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase
+		}
 	}
 }
 
@@ -100,41 +95,51 @@ func registerANDI() {
 					continue
 				}
 				opcode := 0x0200 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opANDI
+				opcodeTable[opcode] = makeANDI(mode, reg)
 			}
 		}
 	}
 }
 
-func opANDI(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	var imm uint32
-	if sz == sizeLong {
-		imm = c.fetchPCLong()
-	} else {
-		imm = uint32(c.fetchPC()) & sz.Mask()
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	result := dst.read(c, sz) & imm
-	c.setFlagsLogical(result, sz)
-	dst.write(c, sz, result)
-
+func makeANDI(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 16
-		} else {
-			c.cycles += 8
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			var imm uint32
+			if sz == sizeLong {
+				imm = c.fetchPCLong()
+			} else {
+				imm = uint32(c.fetchPC()) & sz.Mask()
+			}
+			result := (c.reg.D[reg] & sz.Mask()) & imm
+			c.setFlagsLogical(result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 16
+			} else {
+				c.cycles += 8
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		var imm uint32
 		if sz == sizeLong {
-			c.cycles += 20 + fetch
+			imm = c.fetchPCLong()
 		} else {
-			c.cycles += 12 + fetch
+			imm = uint32(c.fetchPC()) & sz.Mask()
+		}
+		a := addr(c, sz)
+		result := c.readBus(sz, a) & imm
+		c.setFlagsLogical(result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 20 + eaBase + eaLong
+		} else {
+			c.cycles += 12 + eaBase
 		}
 	}
 }
@@ -153,7 +158,7 @@ func registerOR() {
 						continue
 					}
 					opcode := 0x8000 | dn<<9 | szBits<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opORtoReg
+					opcodeTable[opcode] = makeORtoReg(dn, mode, reg)
 				}
 			}
 			for mode := uint16(2); mode < 8; mode++ {
@@ -162,52 +167,47 @@ func registerOR() {
 						continue
 					}
 					opcode := 0x8000 | dn<<9 | (szBits+4)<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opORtoEA
+					opcodeTable[opcode] = makeORtoEA(dn, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opORtoReg(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	result := src.read(c, sz) | (c.reg.D[dn] & sz.Mask())
-	c.setFlagsLogical(result, sz)
-
-	mask := sz.Mask()
-	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != sizeLong {
-		c.cycles += 4 + fetch
-	} else if mode >= 2 && !(mode == 7 && reg == 4) {
-		c.cycles += 6 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeORtoReg(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	isMem := mode >= 2 && !(mode == 7 && reg == 4)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		result := read(c, sz) | (c.reg.D[dn] & sz.Mask())
+		c.setFlagsLogical(result, sz)
+		mask := sz.Mask()
+		c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
+		if sz != sizeLong {
+			c.cycles += 4 + eaBase
+		} else if isMem {
+			c.cycles += 6 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase + eaLong
+		}
 	}
 }
 
-func opORtoEA(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	result := dst.read(c, sz) | (c.reg.D[dn] & sz.Mask())
-	c.setFlagsLogical(result, sz)
-	dst.write(c, sz, result)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == sizeLong {
-		c.cycles += 12 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeORtoEA(dn, mode, reg uint16) opFunc {
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
+		a := addr(c, sz)
+		result := c.readBus(sz, a) | (c.reg.D[dn] & sz.Mask())
+		c.setFlagsLogical(result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 12 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase
+		}
 	}
 }
 
@@ -224,41 +224,51 @@ func registerORI() {
 					continue
 				}
 				opcode := 0x0000 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opORI
+				opcodeTable[opcode] = makeORI(mode, reg)
 			}
 		}
 	}
 }
 
-func opORI(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	var imm uint32
-	if sz == sizeLong {
-		imm = c.fetchPCLong()
-	} else {
-		imm = uint32(c.fetchPC()) & sz.Mask()
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	result := dst.read(c, sz) | imm
-	c.setFlagsLogical(result, sz)
-	dst.write(c, sz, result)
-
+func makeORI(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 16
-		} else {
-			c.cycles += 8
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			var imm uint32
+			if sz == sizeLong {
+				imm = c.fetchPCLong()
+			} else {
+				imm = uint32(c.fetchPC()) & sz.Mask()
+			}
+			result := (c.reg.D[reg] & sz.Mask()) | imm
+			c.setFlagsLogical(result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 16
+			} else {
+				c.cycles += 8
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		var imm uint32
 		if sz == sizeLong {
-			c.cycles += 20 + fetch
+			imm = c.fetchPCLong()
 		} else {
-			c.cycles += 12 + fetch
+			imm = uint32(c.fetchPC()) & sz.Mask()
+		}
+		a := addr(c, sz)
+		result := c.readBus(sz, a) | imm
+		c.setFlagsLogical(result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 20 + eaBase + eaLong
+		} else {
+			c.cycles += 12 + eaBase
 		}
 	}
 }
@@ -277,36 +287,40 @@ func registerEOR() {
 						continue
 					}
 					opcode := 0xB000 | dn<<9 | (szBits+4)<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opEOR
+					opcodeTable[opcode] = makeEOR(dn, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opEOR(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	result := dst.read(c, sz) ^ (c.reg.D[dn] & sz.Mask())
-	c.setFlagsLogical(result, sz)
-	dst.write(c, sz, result)
-
+func makeEOR(dn, mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 8
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
+			result := (c.reg.D[reg] & sz.Mask()) ^ (c.reg.D[dn] & sz.Mask())
+			c.setFlagsLogical(result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 8
+			} else {
+				c.cycles += 4
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
+		a := addr(c, sz)
+		result := c.readBus(sz, a) ^ (c.reg.D[dn] & sz.Mask())
+		c.setFlagsLogical(result, sz)
+		c.writeBus(sz, a, result)
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			c.cycles += 12 + eaBase + eaLong
 		} else {
-			c.cycles += 8 + fetch
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -324,41 +338,51 @@ func registerEORI() {
 					continue
 				}
 				opcode := 0x0A00 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opEORI
+				opcodeTable[opcode] = makeEORI(mode, reg)
 			}
 		}
 	}
 }
 
-func opEORI(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	var imm uint32
-	if sz == sizeLong {
-		imm = c.fetchPCLong()
-	} else {
-		imm = uint32(c.fetchPC()) & sz.Mask()
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	result := dst.read(c, sz) ^ imm
-	c.setFlagsLogical(result, sz)
-	dst.write(c, sz, result)
-
+func makeEORI(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 16
-		} else {
-			c.cycles += 8
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			var imm uint32
+			if sz == sizeLong {
+				imm = c.fetchPCLong()
+			} else {
+				imm = uint32(c.fetchPC()) & sz.Mask()
+			}
+			result := (c.reg.D[reg] & sz.Mask()) ^ imm
+			c.setFlagsLogical(result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 16
+			} else {
+				c.cycles += 8
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		var imm uint32
 		if sz == sizeLong {
-			c.cycles += 20 + fetch
+			imm = c.fetchPCLong()
 		} else {
-			c.cycles += 12 + fetch
+			imm = uint32(c.fetchPC()) & sz.Mask()
+		}
+		a := addr(c, sz)
+		result := c.readBus(sz, a) ^ imm
+		c.setFlagsLogical(result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 20 + eaBase + eaLong
+		} else {
+			c.cycles += 12 + eaBase
 		}
 	}
 }
@@ -376,34 +400,39 @@ func registerNOT() {
 					continue
 				}
 				opcode := 0x4600 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opNOT
+				opcodeTable[opcode] = makeNOT(mode, reg)
 			}
 		}
 	}
 }
 
-func opNOT(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	result := ^dst.read(c, sz) & sz.Mask()
-	c.setFlagsLogical(result, sz)
-	dst.write(c, sz, result)
-
+func makeNOT(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 6
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			result := ^c.reg.D[reg] & sz.Mask()
+			c.setFlagsLogical(result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 6
+			} else {
+				c.cycles += 4
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		a := addr(c, sz)
+		result := ^c.readBus(sz, a) & sz.Mask()
+		c.setFlagsLogical(result, sz)
+		c.writeBus(sz, a, result)
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			c.cycles += 12 + eaBase + eaLong
 		} else {
-			c.cycles += 8 + fetch
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -421,22 +450,31 @@ func registerTST() {
 					continue
 				}
 				opcode := 0x4A00 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opTST
+				opcodeTable[opcode] = makeTST(mode, reg)
 			}
 		}
 	}
 }
 
-func opTST(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	val := src.read(c, sz)
-	c.setFlagsLogical(val, sz)
-
-	c.cycles += 4 + eaFetchCycles(mode, reg, sz)
+func makeTST(mode, reg uint16) opFunc {
+	if mode == 0 {
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			c.setFlagsLogical(c.reg.D[reg]&sz.Mask(), sz)
+			c.cycles += 4
+		}
+	}
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		val := read(c, sz)
+		c.setFlagsLogical(val, sz)
+		c.cycles += 4 + eaBase
+		if sz == sizeLong {
+			c.cycles += eaLong
+		}
+	}
 }
 
 // --- TAS ---
@@ -453,28 +491,28 @@ func registerTAS() {
 				continue
 			}
 			opcode := 0x4AC0 | mode<<3 | reg
-			opcodeTable[opcode] = opTAS
+			opcodeTable[opcode] = makeTAS(mode, reg)
 		}
 	}
 }
 
-func opTAS(c *CPU) {
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sizeByte)
-	val := dst.read(c, sizeByte)
-
-	// Test: set N and Z like TST.B, clear V and C
-	c.setFlagsLogical(val, sizeByte)
-
-	// Set bit 7
-	dst.write(c, sizeByte, val|0x80)
-
+func makeTAS(mode, reg uint16) opFunc {
 	if mode == 0 {
-		c.cycles += 4
-	} else {
-		c.cycles += 10 + eaFetchCycles(mode, reg, sizeByte)
+		return func(c *CPU) {
+			val := c.reg.D[reg] & 0xFF
+			c.setFlagsLogical(val, sizeByte)
+			c.reg.D[reg] = (c.reg.D[reg] & 0xFFFFFF00) | (val | 0x80)
+			c.cycles += 4
+		}
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		a := addr(c, sizeByte)
+		val := c.readBus(sizeByte, a)
+		c.setFlagsLogical(val, sizeByte)
+		c.writeBus(sizeByte, a, val|0x80)
+		c.cycles += 10 + eaBase
 	}
 }
 
@@ -513,7 +551,7 @@ func registerShifts() {
 						continue
 					}
 					opcode := 0xE0C0 | typ<<9 | dir<<8 | mode<<3 | reg
-					opcodeTable[opcode] = opShiftMem
+					opcodeTable[opcode] = makeShiftMem(mode, reg)
 				}
 			}
 		}
@@ -550,18 +588,18 @@ func opShiftReg(c *CPU) {
 	}
 }
 
-func opShiftMem(c *CPU) {
-	dir := (c.ir >> 8) & 1
-	typ := (c.ir >> 9) & 3
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sizeWord)
-	val := dst.read(c, sizeWord)
-	result := doShift(c, val, 1, dir, typ, sizeWord)
-	dst.write(c, sizeWord, result)
-
-	c.cycles += 8 + eaFetchCycles(mode, reg, sizeWord)
+func makeShiftMem(mode, reg uint16) opFunc {
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		dir := (c.ir >> 8) & 1
+		typ := (c.ir >> 9) & 3
+		a := addr(c, sizeWord)
+		val := c.readBus(sizeWord, a)
+		result := doShift(c, val, 1, dir, typ, sizeWord)
+		c.writeBus(sizeWord, a, result)
+		c.cycles += 8 + eaBase
+	}
 }
 
 // doShift performs the actual shift/rotate operation.

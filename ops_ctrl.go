@@ -140,7 +140,7 @@ func registerMoveToFromSR() {
 			if mode == 7 && reg > 1 {
 				continue
 			}
-			opcodeTable[0x40C0|mode<<3|reg] = opMOVEfromSR
+			opcodeTable[0x40C0|mode<<3|reg] = makeMOVEfromSR(mode, reg)
 		}
 	}
 
@@ -154,7 +154,7 @@ func registerMoveToFromSR() {
 			if mode == 7 && reg > 4 {
 				continue
 			}
-			opcodeTable[0x44C0|mode<<3|reg] = opMOVEtoCCR
+			opcodeTable[0x44C0|mode<<3|reg] = makeMOVEtoCCR(mode, reg)
 		}
 	}
 
@@ -168,7 +168,7 @@ func registerMoveToFromSR() {
 			if mode == 7 && reg > 4 {
 				continue
 			}
-			opcodeTable[0x46C0|mode<<3|reg] = opMOVEtoSR
+			opcodeTable[0x46C0|mode<<3|reg] = makeMOVEtoSR(mode, reg)
 		}
 	}
 
@@ -180,45 +180,50 @@ func registerMoveToFromSR() {
 	}
 }
 
-func opMOVEfromSR(c *CPU) {
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sizeWord)
-	dst.write(c, sizeWord, uint32(c.reg.SR))
-
+func makeMOVEfromSR(mode, reg uint16) opFunc {
 	if mode == 0 {
-		c.cycles += 6
-	} else {
-		c.cycles += 8 + eaFetchCycles(mode, reg, sizeWord)
+		return func(c *CPU) {
+			c.reg.D[reg] = (c.reg.D[reg] & 0xFFFF0000) | uint32(c.reg.SR)
+			c.cycles += 6
+		}
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, _ := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		a := addr(c, sizeWord)
+		c.writeBus(sizeWord, a, uint32(c.reg.SR))
+		c.cycles += 8 + eaBase
 	}
 }
 
-func opMOVEtoCCR(c *CPU) {
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sizeWord)
-	val := src.read(c, sizeWord)
-	c.setCCR(uint8(val))
-
-	c.cycles += 12 + eaFetchCycles(mode, reg, sizeWord)
+func makeMOVEtoCCR(mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		val := read(c, sizeWord)
+		c.setCCR(uint8(val))
+		c.cycles += 12 + eaBase
+		if sizeWord == sizeLong {
+			c.cycles += eaLong
+		}
+	}
 }
 
-func opMOVEtoSR(c *CPU) {
-	if !c.supervisor() {
-		c.exception(vecPrivilegeViolation)
-		return
+func makeMOVEtoSR(mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		if !c.supervisor() {
+			c.exception(vecPrivilegeViolation)
+			return
+		}
+		val := read(c, sizeWord)
+		c.setSR(uint16(val))
+		c.cycles += 12 + eaBase
+		if sizeWord == sizeLong {
+			c.cycles += eaLong
+		}
 	}
-
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sizeWord)
-	val := src.read(c, sizeWord)
-	c.setSR(uint16(val))
-
-	c.cycles += 12 + eaFetchCycles(mode, reg, sizeWord)
 }
 
 func opMOVEtoUSP(c *CPU) {

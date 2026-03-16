@@ -59,7 +59,7 @@ func registerADD() {
 						continue
 					}
 					opcode := 0xD000 | dn<<9 | szBits<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opADDtoReg
+					opcodeTable[opcode] = makeADDtoReg(dn, mode, reg)
 				}
 			}
 			// Direction 1: Dn,<ea> (memory alterable only)
@@ -69,56 +69,51 @@ func registerADD() {
 						continue
 					}
 					opcode := 0xD000 | dn<<9 | (szBits+4)<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opADDtoEA
+					opcodeTable[opcode] = makeADDtoEA(dn, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opADDtoReg(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	s := src.read(c, sz)
-	d := c.reg.D[dn] & sz.Mask()
-	result := s + d
-	c.setFlagsAdd(s, d, result, sz)
-
-	mask := sz.Mask()
-	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != sizeLong {
-		c.cycles += 4 + fetch
-	} else if mode >= 2 && !(mode == 7 && reg == 4) {
-		c.cycles += 6 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeADDtoReg(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	isMem := mode >= 2 && !(mode == 7 && reg == 4)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		s := read(c, sz)
+		d := c.reg.D[dn] & sz.Mask()
+		result := s + d
+		c.setFlagsAdd(s, d, result, sz)
+		mask := sz.Mask()
+		c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
+		if sz != sizeLong {
+			c.cycles += 4 + eaBase
+		} else if isMem {
+			c.cycles += 6 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase + eaLong
+		}
 	}
 }
 
-func opADDtoEA(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	s := c.reg.D[dn] & sz.Mask()
-	result := s + d
-	c.setFlagsAdd(s, d, result, sz)
-	dst.write(c, sz, result)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == sizeLong {
-		c.cycles += 12 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeADDtoEA(dn, mode, reg uint16) opFunc {
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		s := c.reg.D[dn] & sz.Mask()
+		result := s + d
+		c.setFlagsAdd(s, d, result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 12 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase
+		}
 	}
 }
 
@@ -133,35 +128,36 @@ func registerADDA() {
 						continue
 					}
 					opcode := 0xD000 | an<<9 | szBit<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opADDA
+					opcodeTable[opcode] = makeADDA(an, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opADDA(c *CPU) {
-	an := (c.ir >> 9) & 7
-	sz := sizeWord
-	if (c.ir>>6)&7 == 7 {
-		sz = sizeLong
-	}
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	val := src.read(c, sz)
-	if sz == sizeWord {
-		val = uint32(int32(int16(val)))
-	}
-	c.reg.A[an] += val
-
-	// ADDA does not affect condition codes
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == sizeLong && mode >= 2 && !(mode == 7 && reg == 4) {
-		c.cycles += 6 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeADDA(an, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	isMem := mode >= 2 && !(mode == 7 && reg == 4)
+	return func(c *CPU) {
+		sz := sizeWord
+		if (c.ir>>6)&7 == 7 {
+			sz = sizeLong
+		}
+		val := read(c, sz)
+		if sz == sizeWord {
+			val = uint32(int32(int16(val)))
+		}
+		c.reg.A[an] += val
+		// ADDA does not affect condition codes
+		if sz == sizeLong && isMem {
+			c.cycles += 6 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase
+			if sz == sizeLong {
+				c.cycles += eaLong
+			}
+		}
 	}
 }
 
@@ -178,42 +174,53 @@ func registerADDI() {
 					continue
 				}
 				opcode := 0x0600 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opADDI
+				opcodeTable[opcode] = makeADDI(mode, reg)
 			}
 		}
 	}
 }
 
-func opADDI(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	var imm uint32
-	if sz == sizeLong {
-		imm = c.fetchPCLong()
-	} else {
-		imm = uint32(c.fetchPC()) & sz.Mask()
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	result := imm + d
-	c.setFlagsAdd(imm, d, result, sz)
-	dst.write(c, sz, result)
-
+func makeADDI(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 16
-		} else {
-			c.cycles += 8
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			var imm uint32
+			if sz == sizeLong {
+				imm = c.fetchPCLong()
+			} else {
+				imm = uint32(c.fetchPC()) & sz.Mask()
+			}
+			d := c.reg.D[reg] & sz.Mask()
+			result := imm + d
+			c.setFlagsAdd(imm, d, result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 16
+			} else {
+				c.cycles += 8
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		var imm uint32
 		if sz == sizeLong {
-			c.cycles += 20 + fetch
+			imm = c.fetchPCLong()
 		} else {
-			c.cycles += 12 + fetch
+			imm = uint32(c.fetchPC()) & sz.Mask()
+		}
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		result := imm + d
+		c.setFlagsAdd(imm, d, result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 20 + eaBase + eaLong
+		} else {
+			c.cycles += 12 + eaBase
 		}
 	}
 }
@@ -233,47 +240,53 @@ func registerADDQ() {
 						continue
 					}
 					opcode := 0x5000 | data<<9 | szBits<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opADDQ
+					opcodeTable[opcode] = makeADDQ(data, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opADDQ(c *CPU) {
-	data := uint32((c.ir >> 9) & 7)
-	if data == 0 {
-		data = 8
+func makeADDQ(data, mode, reg uint16) opFunc {
+	imm := uint32(data)
+	if imm == 0 {
+		imm = 8
 	}
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	if mode == 1 {
-		// ADDQ to An: always 32-bit, no flags
-		c.reg.A[reg] += data
-		c.cycles += 8
-		return
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	result := data + d
-	c.setFlagsAdd(data, d, result, sz)
-	dst.write(c, sz, result)
-
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 8
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			d := c.reg.D[reg] & sz.Mask()
+			result := imm + d
+			c.setFlagsAdd(imm, d, result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 8
+			} else {
+				c.cycles += 4
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	if mode == 1 {
+		return func(c *CPU) {
+			// ADDQ to An: always 32-bit, no flags
+			c.reg.A[reg] += imm
+			c.cycles += 8
+		}
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		result := imm + d
+		c.setFlagsAdd(imm, d, result, sz)
+		c.writeBus(sz, a, result)
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			c.cycles += 12 + eaBase + eaLong
 		} else {
-			c.cycles += 8 + fetch
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -366,7 +379,7 @@ func registerSUB() {
 						continue
 					}
 					opcode := 0x9000 | dn<<9 | szBits<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opSUBtoReg
+					opcodeTable[opcode] = makeSUBtoReg(dn, mode, reg)
 				}
 			}
 			// Dn,<ea>
@@ -376,56 +389,51 @@ func registerSUB() {
 						continue
 					}
 					opcode := 0x9000 | dn<<9 | (szBits+4)<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opSUBtoEA
+					opcodeTable[opcode] = makeSUBtoEA(dn, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opSUBtoReg(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	s := src.read(c, sz)
-	d := c.reg.D[dn] & sz.Mask()
-	result := d - s
-	c.setFlagsSub(s, d, result, sz)
-
-	mask := sz.Mask()
-	c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz != sizeLong {
-		c.cycles += 4 + fetch
-	} else if mode >= 2 && !(mode == 7 && reg == 4) {
-		c.cycles += 6 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeSUBtoReg(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	isMem := mode >= 2 && !(mode == 7 && reg == 4)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		s := read(c, sz)
+		d := c.reg.D[dn] & sz.Mask()
+		result := d - s
+		c.setFlagsSub(s, d, result, sz)
+		mask := sz.Mask()
+		c.reg.D[dn] = (c.reg.D[dn] & ^mask) | (result & mask)
+		if sz != sizeLong {
+			c.cycles += 4 + eaBase
+		} else if isMem {
+			c.cycles += 6 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase + eaLong
+		}
 	}
 }
 
-func opSUBtoEA(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	s := c.reg.D[dn] & sz.Mask()
-	result := d - s
-	c.setFlagsSub(s, d, result, sz)
-	dst.write(c, sz, result)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == sizeLong {
-		c.cycles += 12 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeSUBtoEA(dn, mode, reg uint16) opFunc {
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding(((c.ir >> 6) & 7) - 4)
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		s := c.reg.D[dn] & sz.Mask()
+		result := d - s
+		c.setFlagsSub(s, d, result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 12 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase
+		}
 	}
 }
 
@@ -440,34 +448,35 @@ func registerSUBA() {
 						continue
 					}
 					opcode := 0x9000 | an<<9 | szBit<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opSUBA
+					opcodeTable[opcode] = makeSUBA(an, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opSUBA(c *CPU) {
-	an := (c.ir >> 9) & 7
-	sz := sizeWord
-	if (c.ir>>6)&7 == 7 {
-		sz = sizeLong
-	}
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	val := src.read(c, sz)
-	if sz == sizeWord {
-		val = uint32(int32(int16(val)))
-	}
-	c.reg.A[an] -= val
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == sizeLong && mode >= 2 && !(mode == 7 && reg == 4) {
-		c.cycles += 6 + fetch
-	} else {
-		c.cycles += 8 + fetch
+func makeSUBA(an, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	isMem := mode >= 2 && !(mode == 7 && reg == 4)
+	return func(c *CPU) {
+		sz := sizeWord
+		if (c.ir>>6)&7 == 7 {
+			sz = sizeLong
+		}
+		val := read(c, sz)
+		if sz == sizeWord {
+			val = uint32(int32(int16(val)))
+		}
+		c.reg.A[an] -= val
+		if sz == sizeLong && isMem {
+			c.cycles += 6 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase
+			if sz == sizeLong {
+				c.cycles += eaLong
+			}
+		}
 	}
 }
 
@@ -484,42 +493,53 @@ func registerSUBI() {
 					continue
 				}
 				opcode := 0x0400 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opSUBI
+				opcodeTable[opcode] = makeSUBI(mode, reg)
 			}
 		}
 	}
 }
 
-func opSUBI(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	var imm uint32
-	if sz == sizeLong {
-		imm = c.fetchPCLong()
-	} else {
-		imm = uint32(c.fetchPC()) & sz.Mask()
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	result := d - imm
-	c.setFlagsSub(imm, d, result, sz)
-	dst.write(c, sz, result)
-
+func makeSUBI(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 16
-		} else {
-			c.cycles += 8
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			var imm uint32
+			if sz == sizeLong {
+				imm = c.fetchPCLong()
+			} else {
+				imm = uint32(c.fetchPC()) & sz.Mask()
+			}
+			d := c.reg.D[reg] & sz.Mask()
+			result := d - imm
+			c.setFlagsSub(imm, d, result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 16
+			} else {
+				c.cycles += 8
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		var imm uint32
 		if sz == sizeLong {
-			c.cycles += 20 + fetch
+			imm = c.fetchPCLong()
 		} else {
-			c.cycles += 12 + fetch
+			imm = uint32(c.fetchPC()) & sz.Mask()
+		}
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		result := d - imm
+		c.setFlagsSub(imm, d, result, sz)
+		c.writeBus(sz, a, result)
+		if sz == sizeLong {
+			c.cycles += 20 + eaBase + eaLong
+		} else {
+			c.cycles += 12 + eaBase
 		}
 	}
 }
@@ -538,46 +558,52 @@ func registerSUBQ() {
 						continue
 					}
 					opcode := 0x5100 | data<<9 | szBits<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opSUBQ
+					opcodeTable[opcode] = makeSUBQ(data, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opSUBQ(c *CPU) {
-	data := uint32((c.ir >> 9) & 7)
-	if data == 0 {
-		data = 8
+func makeSUBQ(data, mode, reg uint16) opFunc {
+	imm := uint32(data)
+	if imm == 0 {
+		imm = 8
 	}
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	if mode == 1 {
-		c.reg.A[reg] -= data
-		c.cycles += 8
-		return
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	result := d - data
-	c.setFlagsSub(data, d, result, sz)
-	dst.write(c, sz, result)
-
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 8
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			d := c.reg.D[reg] & sz.Mask()
+			result := d - imm
+			c.setFlagsSub(imm, d, result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 8
+			} else {
+				c.cycles += 4
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	if mode == 1 {
+		return func(c *CPU) {
+			c.reg.A[reg] -= imm
+			c.cycles += 8
+		}
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		result := d - imm
+		c.setFlagsSub(imm, d, result, sz)
+		c.writeBus(sz, a, result)
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			c.cycles += 12 + eaBase + eaLong
 		} else {
-			c.cycles += 8 + fetch
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -667,30 +693,27 @@ func registerCMP() {
 						continue
 					}
 					opcode := 0xB000 | dn<<9 | szBits<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opCMP
+					opcodeTable[opcode] = makeCMP(dn, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opCMP(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	s := src.read(c, sz)
-	d := c.reg.D[dn] & sz.Mask()
-	result := d - s
-	c.setFlagsCmp(s, d, result, sz)
-
-	fetch := eaFetchCycles(mode, reg, sz)
-	if sz == sizeLong {
-		c.cycles += 6 + fetch
-	} else {
-		c.cycles += 4 + fetch
+func makeCMP(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		s := read(c, sz)
+		d := c.reg.D[dn] & sz.Mask()
+		result := d - s
+		c.setFlagsCmp(s, d, result, sz)
+		if sz == sizeLong {
+			c.cycles += 6 + eaBase + eaLong
+		} else {
+			c.cycles += 4 + eaBase
+		}
 	}
 }
 
@@ -705,32 +728,33 @@ func registerCMPA() {
 						continue
 					}
 					opcode := 0xB000 | an<<9 | szBit<<6 | mode<<3 | reg
-					opcodeTable[opcode] = opCMPA
+					opcodeTable[opcode] = makeCMPA(an, mode, reg)
 				}
 			}
 		}
 	}
 }
 
-func opCMPA(c *CPU) {
-	an := (c.ir >> 9) & 7
-	sz := sizeWord
-	if (c.ir>>6)&7 == 7 {
-		sz = sizeLong
+func makeCMPA(an, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeWord
+		if (c.ir>>6)&7 == 7 {
+			sz = sizeLong
+		}
+		val := read(c, sz)
+		if sz == sizeWord {
+			val = uint32(int32(int16(val)))
+		}
+		d := c.reg.A[an]
+		result := d - val
+		c.setFlagsCmp(val, d, result, sizeLong)
+		c.cycles += 6 + eaBase
+		if sz == sizeLong {
+			c.cycles += eaLong
+		}
 	}
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sz)
-	val := src.read(c, sz)
-	if sz == sizeWord {
-		val = uint32(int32(int16(val)))
-	}
-	d := c.reg.A[an]
-	result := d - val
-	c.setFlagsCmp(val, d, result, sizeLong)
-
-	c.cycles += 6 + eaFetchCycles(mode, reg, sz)
 }
 
 // --- CMPI ---
@@ -746,41 +770,50 @@ func registerCMPI() {
 					continue
 				}
 				opcode := 0x0C00 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opCMPI
+				opcodeTable[opcode] = makeCMPI(mode, reg)
 			}
 		}
 	}
 }
 
-func opCMPI(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	var imm uint32
-	if sz == sizeLong {
-		imm = c.fetchPCLong()
-	} else {
-		imm = uint32(c.fetchPC()) & sz.Mask()
-	}
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	result := d - imm
-	c.setFlagsCmp(imm, d, result, sz)
-
+func makeCMPI(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 14
-		} else {
-			c.cycles += 8
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			var imm uint32
+			if sz == sizeLong {
+				imm = c.fetchPCLong()
+			} else {
+				imm = uint32(c.fetchPC()) & sz.Mask()
+			}
+			d := c.reg.D[reg] & sz.Mask()
+			result := d - imm
+			c.setFlagsCmp(imm, d, result, sz)
+			if sz == sizeLong {
+				c.cycles += 14
+			} else {
+				c.cycles += 8
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		var imm uint32
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			imm = c.fetchPCLong()
 		} else {
-			c.cycles += 8 + fetch
+			imm = uint32(c.fetchPC()) & sz.Mask()
+		}
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		result := d - imm
+		c.setFlagsCmp(imm, d, result, sz)
+		if sz == sizeLong {
+			c.cycles += 12 + eaBase + eaLong
+		} else {
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -830,25 +863,26 @@ func registerMULU() {
 					continue
 				}
 				opcode := 0xC0C0 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opMULU
+				opcodeTable[opcode] = makeMULU(dn, mode, reg)
 			}
 		}
 	}
 }
 
-func opMULU(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sizeWord)
-	s := src.read(c, sizeWord)
-	d := c.reg.D[dn] & 0xFFFF
-	result := s * d
-	c.reg.D[dn] = result
-
-	c.setFlagsLogical(result, sizeLong)
-	c.cycles += 70 + eaFetchCycles(mode, reg, sizeWord) // base varies 38-70, using worst-case
+func makeMULU(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		s := read(c, sizeWord)
+		d := c.reg.D[dn] & 0xFFFF
+		result := s * d
+		c.reg.D[dn] = result
+		c.setFlagsLogical(result, sizeLong)
+		c.cycles += 70 + eaBase
+		if sizeWord == sizeLong {
+			c.cycles += eaLong
+		}
+	}
 }
 
 // --- MULS ---
@@ -864,25 +898,26 @@ func registerMULS() {
 					continue
 				}
 				opcode := 0xC1C0 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opMULS
+				opcodeTable[opcode] = makeMULS(dn, mode, reg)
 			}
 		}
 	}
 }
 
-func opMULS(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sizeWord)
-	s := int32(int16(src.read(c, sizeWord)))
-	d := int32(int16(c.reg.D[dn] & 0xFFFF))
-	result := uint32(s * d)
-	c.reg.D[dn] = result
-
-	c.setFlagsLogical(result, sizeLong)
-	c.cycles += 70 + eaFetchCycles(mode, reg, sizeWord) // base varies 38-70, using worst-case
+func makeMULS(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		s := int32(int16(read(c, sizeWord)))
+		d := int32(int16(c.reg.D[dn] & 0xFFFF))
+		result := uint32(s * d)
+		c.reg.D[dn] = result
+		c.setFlagsLogical(result, sizeLong)
+		c.cycles += 70 + eaBase
+		if sizeWord == sizeLong {
+			c.cycles += eaLong
+		}
+	}
 }
 
 // --- DIVU ---
@@ -898,39 +933,36 @@ func registerDIVU() {
 					continue
 				}
 				opcode := 0x80C0 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opDIVU
+				opcodeTable[opcode] = makeDIVU(dn, mode, reg)
 			}
 		}
 	}
 }
 
-func opDIVU(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sizeWord)
-	divisor := src.read(c, sizeWord)
-
-	if divisor == 0 {
-		c.exception(vecDivideByZero)
-		return
+func makeDIVU(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		divisor := read(c, sizeWord)
+		if divisor == 0 {
+			c.exception(vecDivideByZero)
+			return
+		}
+		dividend := c.reg.D[dn]
+		quotient := dividend / divisor
+		remainder := dividend % divisor
+		if quotient > 0xFFFF {
+			c.reg.SR |= flagV | flagN
+			c.reg.SR &^= flagC | flagZ
+		} else {
+			c.reg.D[dn] = (remainder&0xFFFF)<<16 | (quotient & 0xFFFF)
+			c.setFlagsLogical(quotient, sizeWord)
+		}
+		c.cycles += 140 + eaBase
+		if sizeWord == sizeLong {
+			c.cycles += eaLong
+		}
 	}
-
-	dividend := c.reg.D[dn]
-	quotient := dividend / divisor
-	remainder := dividend % divisor
-
-	if quotient > 0xFFFF {
-		// Overflow
-		c.reg.SR |= flagV | flagN
-		c.reg.SR &^= flagC | flagZ
-	} else {
-		c.reg.D[dn] = (remainder&0xFFFF)<<16 | (quotient & 0xFFFF)
-		c.setFlagsLogical(quotient, sizeWord)
-	}
-
-	c.cycles += 140 + eaFetchCycles(mode, reg, sizeWord) // base varies 76-140, using worst-case
 }
 
 // --- DIVS ---
@@ -946,38 +978,36 @@ func registerDIVS() {
 					continue
 				}
 				opcode := 0x81C0 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opDIVS
+				opcodeTable[opcode] = makeDIVS(dn, mode, reg)
 			}
 		}
 	}
 }
 
-func opDIVS(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sizeWord)
-	divisor := int32(int16(src.read(c, sizeWord)))
-
-	if divisor == 0 {
-		c.exception(vecDivideByZero)
-		return
+func makeDIVS(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		divisor := int32(int16(read(c, sizeWord)))
+		if divisor == 0 {
+			c.exception(vecDivideByZero)
+			return
+		}
+		dividend := int32(c.reg.D[dn])
+		quotient := dividend / divisor
+		remainder := dividend % divisor
+		if quotient > 32767 || quotient < -32768 {
+			c.reg.SR |= flagV | flagN
+			c.reg.SR &^= flagC | flagZ
+		} else {
+			c.reg.D[dn] = uint32(remainder&0xFFFF)<<16 | uint32(quotient)&0xFFFF
+			c.setFlagsLogical(uint32(quotient), sizeWord)
+		}
+		c.cycles += 158 + eaBase
+		if sizeWord == sizeLong {
+			c.cycles += eaLong
+		}
 	}
-
-	dividend := int32(c.reg.D[dn])
-	quotient := dividend / divisor
-	remainder := dividend % divisor
-
-	if quotient > 32767 || quotient < -32768 {
-		c.reg.SR |= flagV | flagN
-		c.reg.SR &^= flagC | flagZ
-	} else {
-		c.reg.D[dn] = uint32(remainder&0xFFFF)<<16 | uint32(quotient)&0xFFFF
-		c.setFlagsLogical(uint32(quotient), sizeWord)
-	}
-
-	c.cycles += 158 + eaFetchCycles(mode, reg, sizeWord) // base varies 120-158, using worst-case
 }
 
 // --- NEG ---
@@ -993,35 +1023,41 @@ func registerNEG() {
 					continue
 				}
 				opcode := 0x4400 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opNEG
+				opcodeTable[opcode] = makeNEG(mode, reg)
 			}
 		}
 	}
 }
 
-func opNEG(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	result := uint32(0) - d
-	c.setFlagsSub(d, 0, result, sz)
-	dst.write(c, sz, result)
-
+func makeNEG(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 6
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			d := c.reg.D[reg] & sz.Mask()
+			result := uint32(0) - d
+			c.setFlagsSub(d, 0, result, sz)
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 6
+			} else {
+				c.cycles += 4
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		result := uint32(0) - d
+		c.setFlagsSub(d, 0, result, sz)
+		c.writeBus(sz, a, result)
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			c.cycles += 12 + eaBase + eaLong
 		} else {
-			c.cycles += 8 + fetch
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -1039,44 +1075,57 @@ func registerNEGX() {
 					continue
 				}
 				opcode := 0x4000 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opNEGX
+				opcodeTable[opcode] = makeNEGX(mode, reg)
 			}
 		}
 	}
 }
 
-func opNEGX(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	d := dst.read(c, sz)
-	x := uint32(0)
-	if c.reg.SR&flagX != 0 {
-		x = 1
-	}
-	result := uint32(0) - d - x
-	oldZ := c.reg.SR & flagZ
-	c.setFlagsSub(d, 0, result, sz)
-	// NEGX: Z flag only cleared, never set (preserves Z across multi-precision)
-	if result&sz.Mask() == 0 {
-		c.reg.SR = (c.reg.SR &^ flagZ) | oldZ
-	}
-	dst.write(c, sz, result)
-
+func makeNEGX(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 6
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			d := c.reg.D[reg] & sz.Mask()
+			x := uint32(0)
+			if c.reg.SR&flagX != 0 {
+				x = 1
+			}
+			result := uint32(0) - d - x
+			oldZ := c.reg.SR & flagZ
+			c.setFlagsSub(d, 0, result, sz)
+			if result&sz.Mask() == 0 {
+				c.reg.SR = (c.reg.SR &^ flagZ) | oldZ
+			}
+			mask := sz.Mask()
+			c.reg.D[reg] = (c.reg.D[reg] & ^mask) | (result & mask)
+			if sz == sizeLong {
+				c.cycles += 6
+			} else {
+				c.cycles += 4
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		a := addr(c, sz)
+		d := c.readBus(sz, a)
+		x := uint32(0)
+		if c.reg.SR&flagX != 0 {
+			x = 1
+		}
+		result := uint32(0) - d - x
+		oldZ := c.reg.SR & flagZ
+		c.setFlagsSub(d, 0, result, sz)
+		if result&sz.Mask() == 0 {
+			c.reg.SR = (c.reg.SR &^ flagZ) | oldZ
+		}
+		c.writeBus(sz, a, result)
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			c.cycles += 12 + eaBase + eaLong
 		} else {
-			c.cycles += 8 + fetch
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -1094,36 +1143,39 @@ func registerCLR() {
 					continue
 				}
 				opcode := 0x4200 | szBits<<6 | mode<<3 | reg
-				opcodeTable[opcode] = opCLR
+				opcodeTable[opcode] = makeCLR(mode, reg)
 			}
 		}
 	}
 }
 
-func opCLR(c *CPU) {
-	sz := sizeEncoding((c.ir >> 6) & 3)
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	dst := c.resolveEA(mode, reg, sz)
-	dst.write(c, sz, 0)
-
-	// CLR always sets Z, clears NVC
-	c.reg.SR &^= flagN | flagV | flagC
-	c.reg.SR |= flagZ
-
+func makeCLR(mode, reg uint16) opFunc {
 	if mode == 0 {
-		if sz == sizeLong {
-			c.cycles += 6
-		} else {
-			c.cycles += 4
+		return func(c *CPU) {
+			sz := sizeEncoding((c.ir >> 6) & 3)
+			mask := sz.Mask()
+			c.reg.D[reg] = c.reg.D[reg] & ^mask
+			c.reg.SR &^= flagN | flagV | flagC
+			c.reg.SR |= flagZ
+			if sz == sizeLong {
+				c.cycles += 6
+			} else {
+				c.cycles += 4
+			}
 		}
-	} else {
-		fetch := eaFetchCycles(mode, reg, sz)
+	}
+	addr := makeEAMemAddr(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		sz := sizeEncoding((c.ir >> 6) & 3)
+		a := addr(c, sz)
+		c.writeBus(sz, a, 0)
+		c.reg.SR &^= flagN | flagV | flagC
+		c.reg.SR |= flagZ
 		if sz == sizeLong {
-			c.cycles += 12 + fetch
+			c.cycles += 12 + eaBase + eaLong
 		} else {
-			c.cycles += 8 + fetch
+			c.cycles += 8 + eaBase
 		}
 	}
 }
@@ -1170,33 +1222,33 @@ func registerCHK() {
 					continue
 				}
 				opcode := 0x4180 | dn<<9 | mode<<3 | reg
-				opcodeTable[opcode] = opCHK
+				opcodeTable[opcode] = makeCHK(dn, mode, reg)
 			}
 		}
 	}
 }
 
-func opCHK(c *CPU) {
-	dn := (c.ir >> 9) & 7
-	mode := uint8((c.ir >> 3) & 7)
-	reg := uint8(c.ir & 7)
-
-	src := c.resolveEA(mode, reg, sizeWord)
-	bound := int16(src.read(c, sizeWord))
-	val := int16(c.reg.D[dn] & 0xFFFF)
-
-	if val < 0 {
-		c.reg.SR &^= flagN | flagZ | flagV | flagC
-		c.reg.SR |= flagN
-		c.exception(vecCHK)
-		return
+func makeCHK(dn, mode, reg uint16) opFunc {
+	read := makeEARead(mode, reg)
+	eaBase, eaLong := eaFetchConst(mode, reg)
+	return func(c *CPU) {
+		bound := int16(read(c, sizeWord))
+		val := int16(c.reg.D[dn] & 0xFFFF)
+		if val < 0 {
+			c.reg.SR &^= flagN | flagZ | flagV | flagC
+			c.reg.SR |= flagN
+			c.exception(vecCHK)
+			return
+		}
+		if val > bound {
+			c.reg.SR &^= flagN | flagZ | flagV | flagC
+			c.exception(vecCHK)
+			return
+		}
+		c.setFlagsCmp(uint32(val), uint32(bound), uint32(bound-val), sizeWord)
+		c.cycles += 10 + eaBase
+		if sizeWord == sizeLong {
+			c.cycles += eaLong
+		}
 	}
-	if val > bound {
-		c.reg.SR &^= flagN | flagZ | flagV | flagC
-		c.exception(vecCHK)
-		return
-	}
-
-	c.setFlagsCmp(uint32(val), uint32(bound), uint32(bound-val), sizeWord)
-	c.cycles += 10 + eaFetchCycles(mode, reg, sizeWord)
 }
