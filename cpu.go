@@ -207,6 +207,19 @@ func (c *CPU) RequestInterrupt(level uint8, vector *uint8) {
 	}
 }
 
+// SetIPL drives the encoded interrupt level present on the IPL2-IPL0
+// inputs (M68000 User's Manual Sec 3.5). The input is level-sensitive: it
+// reflects the level the interrupting device currently asserts, so it may
+// raise or lower the pending level (level 0 means no interrupt requested).
+// A device that withdraws its request before the processor acknowledges it
+// must lower the line through this method; a request still asserted at an
+// instruction boundary is compared against the status register mask
+// (Sec 6.3.2). Pass nil for vector to use auto-vectoring.
+func (c *CPU) SetIPL(level uint8, vector *uint8) {
+	c.pendingIPL = level
+	c.pendingVec = vector
+}
+
 // readBus reads from the bus with 24-bit address masking.
 // Word and long accesses to odd addresses halt the CPU (address error).
 func (c *CPU) readBus(sz size, addr uint32) uint32 {
